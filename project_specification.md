@@ -112,13 +112,16 @@ CREATE TABLE historical_data (
 )
 ```
 
-#### technical_indicators Table (To Be Created)
+#### technical_indicators Table
 
 ```sql
 CREATE TABLE technical_indicators (
     token VARCHAR,
     symbol VARCHAR,
     date DATE,
+    ma_200 DOUBLE,
+    ma_50 DOUBLE,
+    ma_20 DOUBLE,
     ma_200_distance DOUBLE,
     high_21d DOUBLE,
     low_21d DOUBLE,
@@ -128,8 +131,57 @@ CREATE TABLE technical_indicators (
     atl DOUBLE,
     volume_15d_avg DOUBLE,
     volume_ratio DOUBLE,
+    rsi_14 DOUBLE,
+    macd DOUBLE,
+    macd_signal DOUBLE,
+    macd_hist DOUBLE,
+    bb_upper DOUBLE,
+    bb_middle DOUBLE,
+    bb_lower DOUBLE,
     breakout_detected BOOLEAN,
+    calculation_timestamp TIMESTAMP,
     PRIMARY KEY (token, date)
+)
+```
+
+#### latest_market_data Table (To Be Created)
+
+```sql
+CREATE TABLE latest_market_data (
+    token VARCHAR PRIMARY KEY,
+    symbol VARCHAR,
+    name VARCHAR,
+    lotsize VARCHAR,
+    token_type VARCHAR,
+    date DATE,
+    -- OHLCV Data
+    open DOUBLE,
+    high DOUBLE,
+    low DOUBLE,
+    close DOUBLE,
+    volume BIGINT,
+    -- Technical Indicators
+    ma_200 DOUBLE,
+    ma_50 DOUBLE,
+    ma_20 DOUBLE,
+    ma_200_distance DOUBLE,
+    high_21d DOUBLE,
+    low_21d DOUBLE,
+    high_52w DOUBLE,
+    low_52w DOUBLE,
+    ath DOUBLE,
+    atl DOUBLE,
+    volume_15d_avg DOUBLE,
+    volume_ratio DOUBLE,
+    rsi_14 DOUBLE,
+    macd DOUBLE,
+    macd_signal DOUBLE,
+    macd_hist DOUBLE,
+    bb_upper DOUBLE,
+    bb_middle DOUBLE,
+    bb_lower DOUBLE,
+    breakout_detected BOOLEAN,
+    last_updated TIMESTAMP
 )
 ```
 
@@ -178,7 +230,7 @@ Build a Python backend to:
 - ✅ Authenticate with Angel One API
 - ✅ Set up DuckDB database with required tables
 - ✅ Implement token data management (download and store NFO tokens)
-- 🔄 Implement historical data management (fetch and store daily candle data)
+- ✅ Implement historical data management (fetch and store daily candle data)
   - ✅ Token type identification (SPOT/FUTURES/OPTIONS)
   - ✅ Rate limiting implementation (1 request/second)
   - ✅ Retry logic for API calls
@@ -189,43 +241,71 @@ Build a Python backend to:
   - ✅ Implement chunked downloads for historical data
   - ✅ Add proper error handling and recovery
   - ✅ Add detailed logging and verification
-- ⬜ Process and enrich data with technical indicators
+- ✅ Process and enrich data with technical indicators
+  - ✅ Moving Averages (20, 50, 200 days)
+  - ✅ RSI (14 periods)
+  - ✅ MACD (12, 26, 9)
+  - ✅ Bollinger Bands
+  - ✅ Price Levels (21d, 52w, ATH/ATL)
+  - ✅ Volume Analysis
+  - ✅ Breakout Detection
+  - ✅ Create normalized latest market data view
 - ⬜ Create FastAPI endpoints to serve data
 - ⬜ Implement daily data fetching automation
 
-**Current Status**: Successfully implemented historical data download with proper validation:
+**Current Status**: Successfully implemented latest market data normalization:
 
-1. ✅ Fixed timestamp conversion issues: Now properly handling timezone-aware timestamps
-2. ✅ Implemented proper API timeout handling and rate limiting
-3. ✅ Added comprehensive data validation for API responses
-4. ✅ Added detailed logging and progress tracking
-5. ✅ Successfully tested with spot data download (verified with 5 tokens)
+1. ✅ Token Data Management
+   - Implemented token download and storage
+   - Added token type categorization (SPOT/FUTURES/OPTIONS)
+   - Added proper data validation and verification
+   - Successfully managing ~15,000 tokens:
+     - ~227 FUTURES tokens
+     - ~227 SPOT tokens
+     - ~14,587 OPTIONS tokens
+
+2. ✅ Technical Indicators Implementation:
+   - Added comprehensive technical indicators calculation
+   - Implemented hybrid approach (pandas-ta + DuckDB)
+   - Added proper data validation and storage
+   - Added detailed logging and verification
+
+3. ✅ Latest Market Data Normalization:
+   - Created normalized latest_market_data table
+   - Combined data from multiple tables:
+     - Token information (symbol, name, lotsize)
+     - OHLCV data from historical_data
+     - Technical indicators (MA, RSI, MACD, etc.)
+   - Added automated updates
+   - Implemented data verification and logging
 
 **Recent Changes**:
 
-1. Created test infrastructure for historical data download:
-   - Implemented `TestHistoricalDataManager` for controlled testing
-   - Added token limiting functionality for testing
-   - Added detailed data verification and logging
+1. Latest Market Data Implementation:
+   - Added latest_market_data table creation
+   - Implemented data normalization logic
+   - Added proper joins between tables
+   - Added data validation and verification
+   - Added detailed statistics and logging
 
-2. Data Validation Improvements:
-   - Price range validation (High ≥ Low, Open/Close within range)
-   - Volume validation
-   - Timestamp conversion and validation
-   - Detailed error logging with tracebacks
+2. Data Processing Improvements:
+   - Enhanced token data management
+   - Improved technical indicators calculation
+   - Added proper data synchronization
+   - Enhanced error handling and validation
 
-3. Testing Strategy:
-   - Initial testing focused on spot data
-   - Limited to 5 tokens for quick verification
-   - Comprehensive data quality checks
-   - Detailed statistics and sample data points
+3. Testing Implementation:
+   - Added comprehensive test scripts
+   - Added data verification steps
+   - Added detailed logging and statistics
+   - Added sample data analysis
 
 **Next Steps**:
 
-1. Implement technical indicators calculation
-2. Create FastAPI endpoints for data access
-3. Set up daily data fetching automation
-4. Expand testing to futures and options data
+1. Implement FastAPI endpoints for data access
+2. Set up daily data fetching automation
+3. Add data validation and monitoring
+4. Implement the frontend dashboard
 
 ### Phase 2: Frontend Development (Dashboard Visualization)
 
@@ -315,29 +395,59 @@ Develop a Next.js frontend with Shadcn/ui to:
   - [x] Timestamp
   - [x] Download Timestamp
 
-#### 7.4.3. Technical Indicators (To Be Implemented) ⬜
+#### 7.4.3. Technical Indicators (In Progress) 🔄
 
 - Moving Averages
-  - [ ] 200-day MA
-  - [ ] MA Distance (%)
+  - [ ] 200-day MA calculation (excluding current date)
+  - [ ] MA Distance (%) from current close
   - [ ] 50-day MA (optional)
   - [ ] 20-day MA (optional)
-- Price Levels
-  - [ ] 21-day High
-  - [ ] 21-day Low
-  - [ ] 52-week High
-  - [ ] 52-week Low
-  - [ ] All-Time High (ATH)
-  - [ ] All-Time Low (ATL)
+
+- Price Levels (excluding current date)
+  - [ ] 21-day High/Low calculation
+  - [ ] 52-week High/Low calculation
+  - [ ] All-Time High (ATH) tracking
+  - [ ] All-Time Low (ATL) tracking
   - [ ] Distance from ATH/ATL (%)
-- Volume Analysis
-  - [ ] 15-day Average Volume
-  - [ ] Volume Ratio (Today/Average)
+
+- Volume Analysis (excluding current date)
+  - [ ] 15-day Average Volume calculation
+  - [ ] Volume Ratio (Previous Day/15-day Average)
   - [ ] Volume Breakout Detection
+
 - Pattern Recognition
   - [ ] Breakout Detection Logic
   - [ ] Support/Resistance Levels
   - [ ] Trend Direction
+
+**Implementation Strategy**:
+
+1. Data Preparation:
+   - Filter out current date from calculations
+   - Ensure proper date ordering
+   - Handle missing data points
+
+2. Calculation Approach:
+   - Use window functions for moving averages
+   - Implement rolling calculations for highs/lows
+   - Calculate ratios and percentages
+   - Store results in technical_indicators table
+
+3. Performance Optimization:
+   - Use efficient DuckDB window functions
+   - Implement batch processing
+   - Add proper indexing
+
+4. Validation:
+   - Verify calculation accuracy
+   - Check for edge cases
+   - Validate against known values
+
+**Current Focus**:
+
+- Implementing core technical indicators
+- Setting up calculation pipeline
+- Adding proper validation and testing
 
 #### 7.4.4. Options Data (To Be Implemented) ⬜
 
