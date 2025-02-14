@@ -12,4 +12,8 @@ pytz==2024.1
 pandas==2.2.0  # Required by smart-api-python for historical data
 
 # Type Hints
-typing-extensions==4.9.0 
+typing-extensions==4.9.0
+
+# Added from the code block
+pyarrow==14.0.1
+numpy==1.26.4 

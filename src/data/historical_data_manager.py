@@ -137,23 +137,20 @@ class HistoricalDataManager:
     def _store_historical_data(self, historical_data: Dict[str, Any], token_info: Dict[str, Any]) -> bool:
         """Store historical data in the database"""
         if not historical_data or 'data' not in historical_data:
+            logger.warning("No historical data received for storage")
             return False
             
         con = None
         try:
-            con = duckdb.connect(self.db_file)
             current_time = datetime.now(IST).replace(tzinfo=None)
-            
             records = []
-            for candle in historical_data['data']:
+            
+            for idx, candle in enumerate(historical_data['data']):
                 try:
-                    # Parse timestamp and convert to naive datetime in IST
-                    # First convert to pandas timestamp (handles various formats)
+                    # Parse timestamp without debug logs
                     ts = pd.to_datetime(candle[0])
-                    # If timestamp is naive, assume it's in UTC
                     if ts.tz is None:
                         ts = ts.tz_localize('UTC')
-                    # Convert to IST and make it naive for storage
                     timestamp = ts.tz_convert(IST).replace(tzinfo=None)
                     
                     # Convert numeric values with proper error handling
@@ -196,16 +193,18 @@ class HistoricalDataManager:
                         'download_timestamp': current_time
                     })
                 except (ValueError, IndexError) as e:
-                    logger.warning(f"Invalid candle data format: {candle}")
+                    logger.error(f"Invalid candle data at index {idx}: {candle} | Error: {str(e)}")
                     continue
             
             if records:
-                # Convert records to DataFrame
+                # Convert with explicit datetime resolution
                 df = pd.DataFrame(records)
+                df['timestamp'] = pd.to_datetime(df['timestamp'], utc=False).astype('datetime64[us]')
+                df['download_timestamp'] = pd.to_datetime(df['download_timestamp'], utc=False).astype('datetime64[us]')
                 
-                # Convert timestamps to UTC for DuckDB compatibility
-                df['timestamp'] = pd.to_datetime(df['timestamp']).dt.tz_localize(None)
-                df['download_timestamp'] = pd.to_datetime(df['download_timestamp']).dt.tz_localize(None)
+                # Store data in database
+                con = duckdb.connect(self.db_file)
+                con.execute("SET timezone = 'Asia/Kolkata'")
                 
                 # Delete existing records for this token and timestamp
                 con.execute("""
@@ -217,14 +216,14 @@ class HistoricalDataManager:
                 # Insert new records from DataFrame
                 con.execute("INSERT INTO historical_data SELECT * FROM df")
                 
-                logger.debug(f"Successfully stored {len(records)} records for {token_info['symbol']}")
+                logger.info(f"Successfully stored {len(records)} records for {token_info['symbol']}")
                 return True
             else:
                 logger.warning(f"No valid records found for {token_info['symbol']}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error storing historical data for {token_info['symbol']}: {e}")
+            logger.error(f"Storage failed for {token_info['symbol']}: {str(e)}")
             return False
         finally:
             if con:
