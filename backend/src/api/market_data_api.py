@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 # Constants
 IST = pytz.timezone('Asia/Kolkata')
 
+# Global test connection for testing
+test_db_connection = None
+
 # Initialize FastAPI app
 app = FastAPI(
     title="NFO Dashboard API",
@@ -70,9 +73,19 @@ class MarketDataResponse(BaseModel):
     count: int = Field(..., description="Number of records")
     last_updated: datetime = Field(..., description="Data timestamp")
 
+def set_test_db(connection):
+    """Set the test database connection"""
+    global test_db_connection
+    test_db_connection = connection
+
 def get_db_connection():
     """Create and return a database connection"""
     try:
+        # Use test connection if available (for testing)
+        if test_db_connection is not None:
+            return test_db_connection
+            
+        # Otherwise, create new connection
         db_file = os.getenv('DB_FILE', 'nfo_data.duckdb')
         return duckdb.connect(db_file)
     except Exception as e:
@@ -131,7 +144,8 @@ async def get_market_data() -> MarketDataResponse:
             detail=f"Error fetching market data: {str(e)}"
         )
     finally:
-        if 'con' in locals():
+        # Only close if not using test connection
+        if 'con' in locals() and con is not test_db_connection:
             con.close()
 
 @app.get("/api/v1/market-data/{token}", response_model=MarketDataResponse)
@@ -187,7 +201,8 @@ async def get_token_data(token: str) -> MarketDataResponse:
             detail=f"Error fetching token data: {str(e)}"
         )
     finally:
-        if 'con' in locals():
+        # Only close if not using test connection
+        if 'con' in locals() and con is not test_db_connection:
             con.close()
 
 if __name__ == "__main__":

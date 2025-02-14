@@ -10,16 +10,22 @@ import pandas_ta as ta
 IST = pytz.timezone('Asia/Kolkata')
 
 class TechnicalIndicatorManager:
-    def __init__(self):
-        """Initialize the Technical Indicator Manager."""
+    def __init__(self, test_connection=None):
+        """Initialize the Technical Indicator Manager.
+        
+        Args:
+            test_connection: Optional DuckDB connection for testing
+        """
         self.db_file = os.getenv('DB_FILE', 'nfo_data.duckdb')
+        self.test_connection = test_connection
         self.setup_database()
 
     def setup_database(self) -> None:
         """Create the technical_indicators table if it doesn't exist"""
         con = None
         try:
-            con = duckdb.connect(self.db_file)
+            # Use test connection if provided, otherwise create new connection
+            con = self.test_connection if self.test_connection else duckdb.connect(self.db_file)
             
             # Drop existing table to handle schema changes
             con.execute("DROP TABLE IF EXISTS technical_indicators")
@@ -100,7 +106,8 @@ class TechnicalIndicatorManager:
             logger.error(f"Error setting up database tables: {e}")
             raise
         finally:
-            if con:
+            # Only close if we created a new connection
+            if con and not self.test_connection:
                 con.close()
 
     def update_latest_market_data(self) -> bool:

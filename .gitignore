@@ -1,7 +1,22 @@
+# Common
+.DS_Store
+.idea/
+.vscode/
+*.log
+
 # Environment files
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Python
 __pycache__/

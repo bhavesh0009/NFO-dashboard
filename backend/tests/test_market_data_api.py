@@ -5,17 +5,56 @@ from fastapi.testclient import TestClient
 from datetime import datetime
 import pytz
 from typing import Dict, Any
+import duckdb
 
 # Add src directory to Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.api.market_data_api import app
+from src.api.market_data_api import app, set_test_db
+from src.data.technical_indicators import TechnicalIndicatorManager
 
 # Constants
 IST = pytz.timezone('Asia/Kolkata')
 client = TestClient(app)
 
-def test_get_all_market_data():
+@pytest.fixture(scope="session")
+def test_db():
+    """Create test database and required tables"""
+    # Use in-memory database for testing
+    os.environ['DB_FILE'] = ':memory:'
+    
+    # Create a single connection for the entire test session
+    con = duckdb.connect(':memory:')
+    
+    # Set the test connection for the API
+    set_test_db(con)
+    
+    # Initialize tables using the same connection
+    indicator_manager = TechnicalIndicatorManager(test_connection=con)
+    indicator_manager.setup_database()
+    
+    # Insert test market data using the same connection
+    con.execute("""
+        INSERT INTO latest_market_data VALUES (
+            '1234', 'TEST', 'Test Stock', '100', 'SPOT', '2024-03-10',
+            100.0, 105.0, 95.0, 102.0, 1000000,
+            98.0, 99.0, 101.0, 4.0,
+            110.0, 90.0, 120.0, 80.0,
+            150.0, 50.0, 900000.0, 1.1,
+            65.0, 0.5, 0.3, 0.2,
+            105.0, 100.0, 95.0,
+            'BREAKOUT',
+            CURRENT_TIMESTAMP
+        )
+    """)
+    
+    yield con
+    
+    # Cleanup
+    set_test_db(None)  # Reset test connection
+    con.close()
+
+def test_get_all_market_data(test_db):
     """Test getting all market data"""
     response = client.get("/api/v1/market-data")
     assert response.status_code == 200
@@ -68,21 +107,16 @@ def test_get_all_market_data():
         for field in optional_fields:
             assert first_record[field] is None or isinstance(first_record[field], (int, float, str))
 
-def test_get_token_data():
+def test_get_token_data(test_db):
     """Test getting data for a specific token"""
-    # First get all data to get a valid token
-    all_data = client.get("/api/v1/market-data").json()
+    # Test with valid token
+    response = client.get("/api/v1/market-data/1234")
+    assert response.status_code == 200
     
-    if all_data["data"]:
-        # Test with valid token
-        token = all_data["data"][0]["token"]
-        response = client.get(f"/api/v1/market-data/{token}")
-        assert response.status_code == 200
-        
-        data = response.json()
-        assert data["status"] == "success"
-        assert len(data["data"]) == 1
-        assert data["data"][0]["token"] == token
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["data"]) == 1
+    assert data["data"][0]["token"] == "1234"
     
     # Test with invalid token
     response = client.get("/api/v1/market-data/invalid_token")
