@@ -2,6 +2,7 @@ import os
 import requests
 import duckdb
 import pytz
+import pandas as pd
 from datetime import datetime
 from logzero import logger
 from typing import List, Dict, Any, Optional
@@ -23,8 +24,13 @@ class TokenManager:
         try:
             # Create new connection and table
             con = duckdb.connect(self.db_file)
+            
+            # Drop existing table to handle schema changes
+            con.execute("DROP TABLE IF EXISTS tokens")
+            
+            # Create table with new schema
             con.execute("""
-                CREATE TABLE IF NOT EXISTS tokens (
+                CREATE TABLE tokens (
                     token VARCHAR,
                     symbol VARCHAR,
                     formatted_symbol VARCHAR,
@@ -35,9 +41,11 @@ class TokenManager:
                     instrumenttype VARCHAR,
                     exch_seg VARCHAR,
                     tick_size DOUBLE,
+                    token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
                     download_timestamp TIMESTAMP
                 )
             """)
+            logger.info("Database setup completed successfully")
         except Exception as e:
             logger.error(f"Error setting up database: {e}")
             raise
@@ -82,11 +90,13 @@ class TokenManager:
 
     def download_and_store_tokens(self) -> bool:
         """
-        Download tokens from Angel Broking and store them in the database
+        Download and store relevant tokens:
+        1. Future tokens for nearest expiry
+        2. Corresponding spot stock tokens
+        3. Option tokens for the same stocks
         Returns:
             bool: True if successful, False otherwise
         """
-        con = None
         try:
             if self.is_market_data_current():
                 logger.info("Market data is already current. Skipping download.")
@@ -98,54 +108,119 @@ class TokenManager:
             tokens_data = response.json()
             logger.info(f"Downloaded {len(tokens_data)} tokens from API")
             
+            # Convert to DataFrame
+            df = pd.DataFrame(tokens_data)
             current_time = datetime.now(IST).replace(tzinfo=None)
             
+            # Add download timestamp
+            df['download_timestamp'] = current_time
+            
+            # Convert expiry to datetime for comparison
+            df['expiry_date'] = pd.to_datetime(df['expiry'], format='%d%b%Y', errors='coerce')
+            
+            # Step 1: Get Future tokens for nearest expiry
+            logger.info("Processing futures tokens...")
+            futures_mask = (
+                (df['exch_seg'] == 'NFO') & 
+                (df['instrumenttype'] == 'FUTSTK') &
+                (df['expiry_date'] >= pd.Timestamp.now())
+            )
+            futures_df = df[futures_mask].copy()  # Create a copy to avoid warnings
+            
+            if futures_df.empty:
+                logger.error("No future tokens found")
+                return False
+                
+            # Get nearest expiry
+            min_expiry = futures_df['expiry_date'].min()
+            futures_df = futures_df[futures_df['expiry_date'] == min_expiry]
+            futures_df['token_type'] = 'FUTURES'
+            logger.info(f"Found {len(futures_df)} futures for expiry {min_expiry.strftime('%d%b%Y')}")
+            
+            # Step 2: Get corresponding spot tokens
+            logger.info("Processing spot tokens...")
+            stock_names = futures_df['name'].unique()
+            spot_mask = (
+                (df['exch_seg'] == 'NSE') & 
+                (df['name'].isin(stock_names)) & 
+                (df['symbol'].str.endswith('-EQ', na=False))
+            )
+            spot_df = df[spot_mask].copy()  # Create a copy to avoid warnings
+            spot_df['token_type'] = 'SPOT'
+            logger.info(f"Found {len(spot_df)} spot tokens")
+            
+            # Step 3: Get options tokens for nearest expiry
+            logger.info("Processing options tokens...")
+            options_mask = (
+                (df['exch_seg'] == 'NFO') & 
+                (df['instrumenttype'] == 'OPTSTK') &
+                (df['name'].isin(stock_names)) & 
+                (df['expiry_date'] == min_expiry)
+            )
+            options_df = df[options_mask].copy()  # Create a copy to avoid warnings
+            options_df['token_type'] = 'OPTIONS'
+            logger.info(f"Found {len(options_df)} options tokens")
+            
+            # Combine all tokens
+            final_df = pd.concat([futures_df, spot_df, options_df], ignore_index=True)
+            
+            # Format symbols for options
+            mask = final_df['instrumenttype'].isin(['OPTSTK', 'OPTIDX'])
+            final_df.loc[mask, 'formatted_symbol'] = (
+                final_df.loc[mask].apply(
+                    lambda x: f"{x['name']}{x['expiry']}{int(float(x['strike'])/100)}{x['symbol'][-2:]}" 
+                    if pd.notna(x['strike']) and float(x['strike']) > 0 
+                    else x['symbol'],
+                    axis=1
+                )
+            )
+            
+            # Fill NaN values in formatted_symbol with original symbol
+            final_df['formatted_symbol'] = final_df['formatted_symbol'].fillna(final_df['symbol'])
+            
+            # Drop the temporary expiry_date column and ensure proper data types
+            final_df = final_df.drop(columns=['expiry_date'])
+            final_df['strike'] = pd.to_numeric(final_df['strike'], errors='coerce')
+            final_df['tick_size'] = pd.to_numeric(final_df['tick_size'], errors='coerce')
+            
+            # Convert columns to match database schema
+            columns = [
+                'token', 'symbol', 'formatted_symbol', 'name', 'expiry', 
+                'strike', 'lotsize', 'instrumenttype', 'exch_seg', 'tick_size',
+                'token_type', 'download_timestamp'
+            ]
+            final_df = final_df[columns]  # Ensure correct column order
+            
+            # Store in database
             con = duckdb.connect(self.db_file)
-            logger.info("Truncating existing data from tokens table...")
             con.execute("TRUNCATE TABLE tokens")
             
-            inserted_count = 0
-            error_count = 0
+            # Convert DataFrame to DuckDB table
+            con.execute("""
+                CREATE TEMP TABLE temp_tokens (
+                    token VARCHAR,
+                    symbol VARCHAR,
+                    formatted_symbol VARCHAR,
+                    name VARCHAR,
+                    expiry VARCHAR,
+                    strike DOUBLE,
+                    lotsize VARCHAR,
+                    instrumenttype VARCHAR,
+                    exch_seg VARCHAR,
+                    tick_size DOUBLE,
+                    token_type VARCHAR,
+                    download_timestamp TIMESTAMP
+                )
+            """)
+            con.execute("INSERT INTO temp_tokens SELECT * FROM final_df")
+            con.execute("INSERT INTO tokens SELECT * FROM temp_tokens")
+            con.execute("DROP TABLE temp_tokens")
             
-            for token in tokens_data:
-                try:
-                    formatted_expiry = token.get('expiry', '')
-                    option_type = token['symbol'][-2:] if token.get('instrumenttype') in ['OPTSTK', 'OPTIDX'] else ''
-                    strike = float(token.get('strike', 0))
-                    strike_price = int(strike/100) if strike > 0 else 0
-                    
-                    formatted_symbol = token['symbol']
-                    if formatted_expiry and option_type and strike_price > 0:
-                        formatted_symbol = (f"{token['name']}{formatted_expiry}"
-                                         f"{strike_price}{option_type}")
-                    
-                    con.execute("""
-                        INSERT INTO tokens 
-                        (token, symbol, formatted_symbol, name, expiry, strike, 
-                         lotsize, instrumenttype, exch_seg, tick_size, 
-                         download_timestamp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, [
-                        token['token'], token['symbol'], formatted_symbol, 
-                        token.get('name', ''), token.get('expiry', ''), float(token.get('strike', 0)), 
-                        token.get('lotsize', ''), token.get('instrumenttype', ''), 
-                        token.get('exch_seg', ''), float(token.get('tick_size', 0)), 
-                        current_time
-                    ])
-                    inserted_count += 1
-                    
-                except Exception as e:
-                    error_count += 1
-                    logger.error(f"Error inserting token {token.get('token', 'unknown')}: {e}")
-                    continue
-                
-            final_count = con.execute("SELECT COUNT(*) FROM tokens").fetchone()[0]
-            
-            logger.info(f"\nToken processing summary:")
-            logger.info(f"- Total tokens downloaded: {len(tokens_data)}")
-            logger.info(f"- Successfully inserted: {inserted_count}")
-            logger.info(f"- Failed to insert: {error_count}")
-            logger.info(f"- Total records in database: {final_count}")
+            # Log summary by token type
+            summary = final_df.groupby('token_type').size()
+            logger.info("\nToken processing summary:")
+            for type_, count in summary.items():
+                logger.info(f"- {type_}: {count} tokens")
             
             return True
             
@@ -155,9 +230,14 @@ class TokenManager:
         except Exception as e:
             logger.error(f"Error storing tokens: {e}")
             return False
-        finally:
-            if con:
-                con.close()
+
+    def connect(self):
+        """Create and return a database connection"""
+        try:
+            return duckdb.connect(self.db_file)
+        except Exception as e:
+            logger.error(f"Error connecting to database: {e}")
+            raise
 
 if __name__ == "__main__":
     try:
