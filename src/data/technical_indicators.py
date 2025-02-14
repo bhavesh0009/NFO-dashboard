@@ -90,7 +90,7 @@ class TechnicalIndicatorManager:
                     bb_upper DOUBLE,
                     bb_middle DOUBLE,
                     bb_lower DOUBLE,
-                    breakout_detected BOOLEAN,
+                    breakout_detected VARCHAR,  -- 'BREAKOUT', 'BREAKDOWN', or NULL
                     last_updated TIMESTAMP
                 )
             """)
@@ -357,12 +357,17 @@ class TechnicalIndicatorManager:
                         bb_upper,
                         bb_middle,
                         bb_lower,
+                        -- Calculate breakout/breakdown detection
                         CASE 
-                            WHEN volume > volume_15d_avg * 2 
-                            AND close > high_21d 
-                            AND rsi_14 > 50 
-                            THEN TRUE
-                            ELSE FALSE 
+                            WHEN volume > 2 * volume_15d_avg 
+                                AND close > high_21d 
+                                AND ((close - high_21d) / high_21d) <= 0.02 
+                            THEN 'BREAKOUT'
+                            WHEN volume > 2 * volume_15d_avg 
+                                AND close < low_21d 
+                                AND ((low_21d - close) / close) <= 0.005 
+                            THEN 'BREAKDOWN'
+                            ELSE NULL
                         END as breakout_detected,
                         ? as calculation_timestamp
                     FROM volume_analysis
@@ -444,6 +449,113 @@ class TechnicalIndicatorManager:
             
         except Exception as e:
             logger.error(f"Error calculating all indicators: {e}")
+            return False
+        finally:
+            if con:
+                con.close()
+
+    def update_latest_market_data(self) -> bool:
+        """Update the latest market data table with most recent data"""
+        con = None
+        try:
+            con = duckdb.connect(self.db_file)
+            
+            # Get the latest data for each token
+            con.execute("""
+                -- First clear existing data
+                DELETE FROM latest_market_data;
+                
+                -- Insert latest data
+                WITH latest_dates AS (
+                    -- Get the latest date for each token
+                    SELECT 
+                        token,
+                        MAX(date) as latest_date
+                    FROM technical_indicators
+                    GROUP BY token
+                ),
+                latest_technical AS (
+                    -- Get latest technical indicators
+                    SELECT t.*
+                    FROM technical_indicators t
+                    INNER JOIN latest_dates ld 
+                        ON t.token = ld.token 
+                        AND t.date = ld.latest_date
+                ),
+                latest_historical AS (
+                    -- Get latest historical data
+                    SELECT 
+                        h.token,
+                        h.open,
+                        h.high,
+                        h.low,
+                        h.close,
+                        h.volume
+                    FROM historical_data h
+                    INNER JOIN latest_dates ld 
+                        ON h.token = ld.token 
+                        AND h.timestamp::DATE = ld.latest_date
+                )
+                INSERT INTO latest_market_data
+                SELECT 
+                    t.token,
+                    t.symbol,
+                    tok.name,
+                    tok.lotsize,
+                    tok.token_type,
+                    t.date,
+                    -- OHLCV Data
+                    h.open,
+                    h.high,
+                    h.low,
+                    h.close,
+                    h.volume,
+                    -- Technical Indicators
+                    t.ma_200,
+                    t.ma_50,
+                    t.ma_20,
+                    t.ma_200_distance,
+                    t.high_21d,
+                    t.low_21d,
+                    t.high_52w,
+                    t.low_52w,
+                    t.ath,
+                    t.atl,
+                    t.volume_15d_avg,
+                    t.volume_ratio,
+                    t.rsi_14,
+                    t.macd,
+                    t.macd_signal,
+                    t.macd_hist,
+                    t.bb_upper,
+                    t.bb_middle,
+                    t.bb_lower,
+                    t.breakout_detected,
+                    NOW() as last_updated
+                FROM latest_technical t
+                INNER JOIN latest_historical h ON t.token = h.token
+                INNER JOIN tokens tok ON t.token = tok.token
+                WHERE tok.token_type = 'SPOT'
+            """)
+            
+            # Verify the update
+            result = con.execute("""
+                SELECT 
+                    COUNT(*) as record_count,
+                    MIN(date) as data_date,
+                    COUNT(CASE WHEN breakout_detected THEN 1 END) as breakouts
+                FROM latest_market_data
+            """).fetchone()
+            
+            logger.info(f"Latest market data updated successfully:")
+            logger.info(f"- Records: {result[0]}")
+            logger.info(f"- Date: {result[1]}")
+            logger.info(f"- Breakout signals: {result[2]}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating latest market data: {e}")
             return False
         finally:
             if con:

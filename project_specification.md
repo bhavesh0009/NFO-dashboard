@@ -138,7 +138,7 @@ CREATE TABLE technical_indicators (
     bb_upper DOUBLE,
     bb_middle DOUBLE,
     bb_lower DOUBLE,
-    breakout_detected BOOLEAN,
+    breakout_detected VARCHAR,  -- 'BREAKOUT', 'BREAKDOWN', or NULL
     calculation_timestamp TIMESTAMP,
     PRIMARY KEY (token, date)
 )
@@ -180,7 +180,7 @@ CREATE TABLE latest_market_data (
     bb_upper DOUBLE,
     bb_middle DOUBLE,
     bb_lower DOUBLE,
-    breakout_detected BOOLEAN,
+    breakout_detected VARCHAR,  -- 'BREAKOUT', 'BREAKDOWN', or NULL
     last_updated TIMESTAMP
 )
 ```
@@ -397,26 +397,15 @@ Develop a Next.js frontend with Shadcn/ui to:
 
 #### 7.4.3. Technical Indicators ✅
 
-- Moving Averages
-  - [x] 200-day MA calculation (excluding current date)
-  - [x] MA Distance (%) from current close
-  - [x] 50-day MA
-  - [x] 20-day MA
-
-- Price Levels (excluding current date)
-  - [x] 21-day High/Low calculation
-  - [x] 52-week High/Low calculation
-  - [x] All-Time High (ATH) tracking
-  - [x] All-Time Low (ATL) tracking
-  - [x] Distance from ATH/ATL (%)
-
-- Volume Analysis (excluding current date)
-  - [x] 15-day Average Volume calculation
-  - [x] Volume Ratio (Previous Day/15-day Average)
-  - [x] Volume Breakout Detection
-
 - Pattern Recognition
-  - [x] Breakout Detection Logic (volume > 2x avg AND close > 21d high AND RSI > 50)
+  - [x] Breakout Detection Logic:
+    - Volume > 2x 15-day average volume
+    - Close > 21-day high
+    - Close should not be more than 2% above 21-day high
+  - [x] Breakdown Detection Logic:
+    - Volume > 2x 15-day average volume
+    - Close < 21-day low
+    - Close should be within 0.5% of 21-day low
   - [x] Support/Resistance Levels (using MA and Bollinger Bands)
   - [x] Trend Direction (using MACD and MA)
 
@@ -449,6 +438,7 @@ Develop a Next.js frontend with Shadcn/ui to:
 - [x] Calculation pipeline established
 - [x] Validation and testing completed
 - [x] Latest market data normalization completed
+- [x] Enhanced breakout/breakdown detection implemented
 
 #### 7.4.4. Options Data (To Be Implemented) ⬜
 
