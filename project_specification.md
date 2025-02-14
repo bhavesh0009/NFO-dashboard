@@ -19,6 +19,8 @@ FnO Trading Data Dashboard
 - Focus on stocks eligible for futures and options trading only
 - Daily data updates during market hours
 - Historical data for derived calculations
+- Spot data from 1992 onwards
+- Current day's data for futures and options
 
 ### 3.2 Data Points and Sources
 
@@ -28,18 +30,21 @@ FnO Trading Data Dashboard
    - Open, High, Low, Close
    - Volume
    - Stock Name and Symbol
+   - Historical data from 1992 for analysis
 
 #### Futures Data (Source: Futures)
 
-1. Future Price
+1. Future Price (Current Day)
 2. Futures Premium % (derived: futures vs stock close)
+3. Only nearest expiry contracts
 
 #### Options Data (Source: Options)
 
-1. ATM Option Price
+1. ATM Option Price (Current Day)
 2. Implied Volatility (IV)
 3. ATM Price % relative to Future Price (derived)
 4. ATM Premium % (derived: future and stock price)
+5. Only nearest expiry contracts
 
 #### Technical Indicators (Source: Stock-Derived)
 
@@ -82,6 +87,7 @@ CREATE TABLE tokens (
     instrumenttype VARCHAR,
     exch_seg VARCHAR,
     tick_size DOUBLE,
+    token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
     download_timestamp TIMESTAMP
 )
 ```
@@ -100,6 +106,7 @@ CREATE TABLE historical_data (
     close DOUBLE,
     volume BIGINT,
     oi BIGINT,
+    token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
     download_timestamp TIMESTAMP,
     PRIMARY KEY (token, timestamp)
 )
@@ -171,15 +178,36 @@ Build a Python backend to:
 - ✅ Authenticate with Angel One API
 - ✅ Set up DuckDB database with required tables
 - ✅ Implement token data management (download and store NFO tokens)
-- ✅ Implement historical data management (fetch and store daily candle data)
-- 🔄 Optimize data fetching and storage for OPTSTK (Option Stocks)
+- 🔄 Implement historical data management (fetch and store daily candle data)
+  - ✅ Token type identification (SPOT/FUTURES/OPTIONS)
+  - ✅ Rate limiting implementation (1 request/second)
+  - ✅ Retry logic for API calls
+  - ❌ Fix timestamp conversion issues
+  - ❌ Handle API timeouts
+  - ❌ Implement data validation
 - ⬜ Process and enrich data with technical indicators
 - ⬜ Create FastAPI endpoints to serve data
 - ⬜ Implement daily data fetching automation
 
-**Current Status**: Core data fetching and storage functionality is implemented. Working on optimizing the token filtering and historical data retrieval for option stocks.
+**Current Status**: Working on fixing historical data download issues:
 
-**Output of Phase 1**: Functional backend with API endpoints that provide tabular FnO data from DuckDB. Frontend not required in this phase, data can be tested via API clients (like Postman, Insomnia, or curl).
+1. Timestamp conversion error: Need to handle timezone-aware timestamps properly
+2. API connection issues: Need to implement better error handling and timeouts
+3. Data validation: Need to add proper validation for API responses
+
+**Known Issues**:
+
+1. DuckDB timestamp conversion error: "Could not convert Timestamp(US) to Timestamp(NS)"
+2. API connection timeouts during long historical data downloads
+3. Need to implement proper data validation and error recovery
+
+**Next Steps**:
+
+1. Fix timestamp conversion issues in DuckDB
+2. Implement proper API timeout handling
+3. Add data validation for API responses
+4. Add progress tracking for long downloads
+5. Implement chunked downloads for historical data
 
 ### Phase 2: Frontend Development (Dashboard Visualization)
 
