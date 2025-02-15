@@ -1,0 +1,11 @@
+Check the code thoroughly. we need some changes in how we are getting data. This is how we plan extract:
+1) Spot daily data at end of the day. (around 3:45pm) - already implemented.
+2) Spot LTP data every 1 minute. Use following method for the same-
+        marketData=self.smart_api.getMarketData(mode, exchangeTokens)
+3) Futures LTP data every 1 minute. Use the same method as above.
+4) Options LTP ATM data every 1 minute. Use the same method as above.
+
+getMarketData can handle 50 tokens at a time. one stock will have 1 spot, 1 future and 2 options. 
+so plan to combine multiple stocks data into single request. store all the data in duckdb new tables. 
+
+create test script which refreshes token(use existing script) and then download the data.

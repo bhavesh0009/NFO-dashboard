@@ -31,16 +31,36 @@ FnO Trading Data Dashboard
    - Volume
    - Stock Name and Symbol
    - Historical data from 1992 for analysis
+   - Last Traded Price (LTP)
+   - Last Trade Quantity
+   - Average Trade Price
+   - Total Buy/Sell Quantities
+   - Best Bid/Ask Prices
+   - Net Change and Percent Change
 
 #### Futures Data (Source: Futures)
 
 1. Future Price (Current Day)
+   - OHLC Data
+   - LTP and Volume
+   - Open Interest
+   - Best Bid/Ask Prices
+   - Total Buy/Sell Quantities
+   - Net Change and Percent Change
 2. Futures Premium % (derived: futures vs stock close)
 3. Only nearest expiry contracts
 
 #### Options Data (Source: Options)
 
 1. ATM Option Price (Current Day)
+   - OHLC Data
+   - LTP and Volume
+   - Open Interest
+   - Best Bid/Ask Prices
+   - Total Buy/Sell Quantities
+   - Strike Price
+   - Option Type (CE/PE)
+   - Net Change and Percent Change
 2. Implied Volatility (IV)
 3. ATM Price % relative to Future Price (derived)
 4. ATM Premium % (derived: future and stock price)
@@ -108,6 +128,85 @@ CREATE TABLE historical_data (
     oi BIGINT,
     token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
     download_timestamp TIMESTAMP,
+    PRIMARY KEY (token, timestamp)
+)
+```
+
+#### realtime_spot_data Table
+
+```sql
+CREATE TABLE realtime_spot_data (
+    token VARCHAR,
+    symbol VARCHAR,
+    ltp DOUBLE,
+    open DOUBLE,
+    high DOUBLE,
+    low DOUBLE,
+    close DOUBLE,
+    last_trade_qty INTEGER,
+    avg_trade_price DOUBLE,
+    volume BIGINT,
+    total_buy_qty BIGINT,
+    total_sell_qty BIGINT,
+    best_bid_price DOUBLE,
+    best_ask_price DOUBLE,
+    net_change DOUBLE,
+    percent_change DOUBLE,
+    timestamp TIMESTAMP,
+    PRIMARY KEY (token, timestamp)
+)
+```
+
+#### realtime_futures_data Table
+
+```sql
+CREATE TABLE realtime_futures_data (
+    token VARCHAR,
+    symbol VARCHAR,
+    ltp DOUBLE,
+    open DOUBLE,
+    high DOUBLE,
+    low DOUBLE,
+    close DOUBLE,
+    last_trade_qty INTEGER,
+    avg_trade_price DOUBLE,
+    volume BIGINT,
+    oi BIGINT,
+    total_buy_qty BIGINT,
+    total_sell_qty BIGINT,
+    best_bid_price DOUBLE,
+    best_ask_price DOUBLE,
+    net_change DOUBLE,
+    percent_change DOUBLE,
+    timestamp TIMESTAMP,
+    PRIMARY KEY (token, timestamp)
+)
+```
+
+#### realtime_options_data Table
+
+```sql
+CREATE TABLE realtime_options_data (
+    token VARCHAR,
+    symbol VARCHAR,
+    ltp DOUBLE,
+    open DOUBLE,
+    high DOUBLE,
+    low DOUBLE,
+    close DOUBLE,
+    last_trade_qty INTEGER,
+    avg_trade_price DOUBLE,
+    volume BIGINT,
+    oi BIGINT,
+    total_buy_qty BIGINT,
+    total_sell_qty BIGINT,
+    best_bid_price DOUBLE,
+    best_ask_price DOUBLE,
+    net_change DOUBLE,
+    percent_change DOUBLE,
+    strike DOUBLE,
+    option_type VARCHAR,  -- 'CE' or 'PE'
+    timestamp TIMESTAMP,
     PRIMARY KEY (token, timestamp)
 )
 ```
@@ -185,37 +284,6 @@ CREATE TABLE latest_market_data (
 )
 ```
 
-#### options_data Table (To Be Created)
-
-```sql
-CREATE TABLE options_data (
-    token VARCHAR,
-    symbol VARCHAR,
-    date DATE,
-    atm_price DOUBLE,
-    iv DOUBLE,
-    atm_future_ratio DOUBLE,
-    future_premium_pct DOUBLE,
-    atm_premium_pct DOUBLE,
-    pcr DOUBLE,
-    oi_change BIGINT,
-    PRIMARY KEY (token, date)
-)
-```
-
-#### market_data Table (To Be Created)
-
-```sql
-CREATE TABLE market_data (
-    token VARCHAR,
-    symbol VARCHAR,
-    date DATE,
-    result_date DATE,
-    in_ban BOOLEAN,
-    PRIMARY KEY (token, date)
-)
-```
-
 ## 4. Target Audience
 
 - Primarily for personal use
@@ -258,81 +326,45 @@ Build a Python backend to:
   - ✅ Add CORS middleware
   - ✅ Add API documentation (Swagger/ReDoc)
   - ✅ Add test coverage
+- ⬜ Implement real-time market data storage
+  - ✅ Create tables for real-time data
+  - ✅ Implement data fetching
+  - ⚠️ Fix storage issues (currently failing silently)
+  - ⚠️ Add proper error logging for storage operations
+  - ⚠️ Add data validation before storage
+  - ⚠️ Add storage success/failure logging
 - ⬜ Implement daily data fetching automation
 
-**Current Status**: Successfully implemented FastAPI endpoints with comprehensive test coverage:
+**Current Status**: Successfully implemented real-time market data fetching with the following issues to resolve:
 
-1. ✅ Token Data Management
-   - Implemented token download and storage
-   - Added token type categorization (SPOT/FUTURES/OPTIONS)
-   - Added proper data validation and verification
-   - Successfully managing ~15,000 tokens:
-     - ~227 FUTURES tokens
-     - ~227 SPOT tokens
-     - ~14,587 OPTIONS tokens
+1. ⚠️ Storage Operations:
+   - Need to fix silent failures in data storage
+   - Add proper error logging
+   - Add data validation before storage
+   - Add storage success/failure confirmation
 
-2. ✅ Technical Indicators Implementation:
-   - Added comprehensive technical indicators calculation
-   - Implemented hybrid approach (pandas-ta + DuckDB)
-   - Added proper data validation and storage
-   - Added detailed logging and verification
+2. ⚠️ Data Validation:
+   - Add validation for all fields before storage
+   - Handle missing or invalid data gracefully
+   - Log validation failures
 
-3. ✅ Latest Market Data Normalization:
-   - Created normalized latest_market_data table
-   - Combined data from multiple tables:
-     - Token information (symbol, name, lotsize)
-     - OHLCV data from historical_data
-     - Technical indicators (MA, RSI, MACD, etc.)
-   - Added automated updates
-   - Implemented data verification and logging
+3. ⚠️ Error Handling:
+   - Improve error messages
+   - Add retry logic for failed storage operations
+   - Add proper cleanup for failed operations
 
-4. ✅ FastAPI Implementation:
-   - Created RESTful API endpoints
-   - Added Pydantic models for validation
-   - Implemented error handling
-   - Added CORS middleware
-   - Added API documentation
-   - Added comprehensive test coverage:
-     - Unit tests for all endpoints
-     - Data validation testing
-     - Error handling scenarios
-     - In-memory database testing
-     - Test fixtures and utilities
-
-**Recent Changes**:
-
-1. FastAPI Implementation:
-   - Added market_data_api.py with endpoints
-   - Added Pydantic models for validation
-   - Added error handling and logging
-   - Added CORS middleware
-   - Added API documentation
-
-2. Testing Implementation:
-   - Added test_market_data_api.py with comprehensive test coverage
-   - Implemented in-memory database testing
-   - Added test fixtures for database setup
-   - Added data validation testing
-   - Added error handling testing
-   - Successfully passing all test cases
-
-3. Code Refactoring:
-   - Improved database connection management
-   - Added test database support
-   - Enhanced error handling
-   - Improved code organization
-   - Added proper cleanup in tests
-
-4. Dependencies Update:
-   - Added FastAPI and dependencies
-   - Added testing dependencies (pytest, httpx)
-   - Updated requirements.txt
+4. ⚠️ Logging:
+   - Add detailed logging for storage operations
+   - Add success/failure metrics
+   - Add data quality metrics
 
 **Next Steps**:
 
-1. Set up daily data fetching automation
-2. Add data validation and monitoring
-3. Implement the frontend dashboard
+1. Fix storage operations and add proper logging
+2. Implement data validation and error handling
+3. Add storage success/failure confirmation
+4. Set up daily data fetching automation
+5. Implement the frontend dashboard
 
 ### Phase 2: Frontend Development (Dashboard Visualization)
 
