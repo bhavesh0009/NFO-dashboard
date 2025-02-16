@@ -29,11 +29,17 @@ class AngelMarketData:
         try:
             con = duckdb.connect(self.db_file)
             
+            # Drop existing tables
+            con.execute("DROP TABLE IF EXISTS realtime_spot_data")
+            con.execute("DROP TABLE IF EXISTS realtime_futures_data")
+            con.execute("DROP TABLE IF EXISTS realtime_options_data")
+            
             # Create real-time spot data table
             con.execute("""
-                CREATE TABLE IF NOT EXISTS realtime_spot_data (
+                CREATE TABLE realtime_spot_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
                     high DOUBLE,
@@ -48,6 +54,14 @@ class AngelMarketData:
                     best_ask_price DOUBLE,
                     net_change DOUBLE,
                     percent_change DOUBLE,
+                    lower_circuit DOUBLE,
+                    upper_circuit DOUBLE,
+                    week_low_52 DOUBLE,
+                    week_high_52 DOUBLE,
+                    best_bid_orders INTEGER,
+                    best_ask_orders INTEGER,
+                    exch_feed_time TIMESTAMP,
+                    exch_trade_time TIMESTAMP,
                     timestamp TIMESTAMP,
                     PRIMARY KEY (token, timestamp)
                 )
@@ -55,9 +69,10 @@ class AngelMarketData:
             
             # Create real-time futures data table
             con.execute("""
-                CREATE TABLE IF NOT EXISTS realtime_futures_data (
+                CREATE TABLE realtime_futures_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
                     high DOUBLE,
@@ -73,6 +88,14 @@ class AngelMarketData:
                     best_ask_price DOUBLE,
                     net_change DOUBLE,
                     percent_change DOUBLE,
+                    lower_circuit DOUBLE,
+                    upper_circuit DOUBLE,
+                    week_low_52 DOUBLE,
+                    week_high_52 DOUBLE,
+                    best_bid_orders INTEGER,
+                    best_ask_orders INTEGER,
+                    exch_feed_time TIMESTAMP,
+                    exch_trade_time TIMESTAMP,
                     timestamp TIMESTAMP,
                     PRIMARY KEY (token, timestamp)
                 )
@@ -80,9 +103,10 @@ class AngelMarketData:
             
             # Create real-time options data table
             con.execute("""
-                CREATE TABLE IF NOT EXISTS realtime_options_data (
+                CREATE TABLE realtime_options_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
                     high DOUBLE,
@@ -98,8 +122,16 @@ class AngelMarketData:
                     best_ask_price DOUBLE,
                     net_change DOUBLE,
                     percent_change DOUBLE,
+                    lower_circuit DOUBLE,
+                    upper_circuit DOUBLE,
+                    week_low_52 DOUBLE,
+                    week_high_52 DOUBLE,
+                    best_bid_orders INTEGER,
+                    best_ask_orders INTEGER,
                     strike DOUBLE,
-                    option_type VARCHAR,  -- 'CE' or 'PE'
+                    option_type VARCHAR,
+                    exch_feed_time TIMESTAMP,
+                    exch_trade_time TIMESTAMP,
                     timestamp TIMESTAMP,
                     PRIMARY KEY (token, timestamp)
                 )
@@ -184,10 +216,17 @@ class AngelMarketData:
                 depth = data.get('depth', {})
                 best_bid = depth.get('buy', [{}])[0].get('price', 0.0)
                 best_ask = depth.get('sell', [{}])[0].get('price', 0.0)
+                best_bid_orders = depth.get('buy', [{}])[0].get('orders', 0)
+                best_ask_orders = depth.get('sell', [{}])[0].get('orders', 0)
+                
+                # Parse exchange timestamps
+                exch_feed_time = datetime.strptime(data['exchFeedTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
+                exch_trade_time = datetime.strptime(data['exchTradeTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
                 
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
                     float(data['high']),
@@ -202,17 +241,27 @@ class AngelMarketData:
                     float(best_ask),
                     float(data['netChange']),
                     float(data['percentChange']),
+                    float(data['lowerCircuit']),
+                    float(data['upperCircuit']),
+                    float(data['52WeekLow']),
+                    float(data['52WeekHigh']),
+                    int(best_bid_orders),
+                    int(best_ask_orders),
+                    exch_feed_time,
+                    exch_trade_time,
                     timestamp
                 ))
             
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_spot_data (
-                    token, symbol, ltp, open, high, low, close, 
+                    token, symbol, exchange, ltp, open, high, low, close, 
                     last_trade_qty, avg_trade_price, volume,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
-                    net_change, percent_change, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    net_change, percent_change, lower_circuit, upper_circuit,
+                    week_low_52, week_high_52, best_bid_orders, best_ask_orders,
+                    exch_feed_time, exch_trade_time, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True
@@ -245,10 +294,17 @@ class AngelMarketData:
                 depth = data.get('depth', {})
                 best_bid = depth.get('buy', [{}])[0].get('price', 0.0)
                 best_ask = depth.get('sell', [{}])[0].get('price', 0.0)
+                best_bid_orders = depth.get('buy', [{}])[0].get('orders', 0)
+                best_ask_orders = depth.get('sell', [{}])[0].get('orders', 0)
+                
+                # Parse exchange timestamps
+                exch_feed_time = datetime.strptime(data['exchFeedTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
+                exch_trade_time = datetime.strptime(data['exchTradeTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
                 
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
                     float(data['high']),
@@ -264,17 +320,27 @@ class AngelMarketData:
                     float(best_ask),
                     float(data['netChange']),
                     float(data['percentChange']),
+                    float(data['lowerCircuit']),
+                    float(data['upperCircuit']),
+                    float(data['52WeekLow']),
+                    float(data['52WeekHigh']),
+                    int(best_bid_orders),
+                    int(best_ask_orders),
+                    exch_feed_time,
+                    exch_trade_time,
                     timestamp
                 ))
             
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_futures_data (
-                    token, symbol, ltp, open, high, low, close,
+                    token, symbol, exchange, ltp, open, high, low, close,
                     last_trade_qty, avg_trade_price, volume, oi,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
-                    net_change, percent_change, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    net_change, percent_change, lower_circuit, upper_circuit,
+                    week_low_52, week_high_52, best_bid_orders, best_ask_orders,
+                    exch_feed_time, exch_trade_time, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True
@@ -307,6 +373,12 @@ class AngelMarketData:
                 depth = data.get('depth', {})
                 best_bid = depth.get('buy', [{}])[0].get('price', 0.0)
                 best_ask = depth.get('sell', [{}])[0].get('price', 0.0)
+                best_bid_orders = depth.get('buy', [{}])[0].get('orders', 0)
+                best_ask_orders = depth.get('sell', [{}])[0].get('orders', 0)
+                
+                # Parse exchange timestamps
+                exch_feed_time = datetime.strptime(data['exchFeedTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
+                exch_trade_time = datetime.strptime(data['exchTradeTime'], "%d-%b-%Y %H:%M:%S").replace(tzinfo=None)
                 
                 # Extract option type from symbol (last 2 characters)
                 option_type = data['tradingSymbol'][-2:] if data['tradingSymbol'][-2:] in ['CE', 'PE'] else None
@@ -314,6 +386,7 @@ class AngelMarketData:
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
                     float(data['high']),
@@ -329,19 +402,29 @@ class AngelMarketData:
                     float(best_ask),
                     float(data['netChange']),
                     float(data['percentChange']),
+                    float(data['lowerCircuit']),
+                    float(data['upperCircuit']),
+                    float(data['52WeekLow']),
+                    float(data['52WeekHigh']),
+                    int(best_bid_orders),
+                    int(best_ask_orders),
                     float(data.get('strike', 0.0)),
                     option_type,
+                    exch_feed_time,
+                    exch_trade_time,
                     timestamp
                 ))
             
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_options_data (
-                    token, symbol, ltp, open, high, low, close,
+                    token, symbol, exchange, ltp, open, high, low, close,
                     last_trade_qty, avg_trade_price, volume, oi,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
-                    net_change, percent_change, strike, option_type, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    net_change, percent_change, lower_circuit, upper_circuit,
+                    week_low_52, week_high_52, best_bid_orders, best_ask_orders,
+                    strike, option_type, exch_feed_time, exch_trade_time, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True

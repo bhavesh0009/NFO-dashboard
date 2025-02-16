@@ -14,7 +14,15 @@ def truncate_tables():
         logger.info("Connected to database")
         
         # List of tables to truncate
-        tables = ['tokens', 'historical_data']
+        tables = [
+            'tokens', 
+            'historical_data',
+            'technical_indicators',
+            'latest_market_data',
+            'realtime_spot_data',
+            'realtime_futures_data',
+            'realtime_options_data'
+        ]
         
         for table in tables:
             try:

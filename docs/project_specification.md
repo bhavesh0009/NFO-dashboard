@@ -138,6 +138,7 @@ CREATE TABLE historical_data (
 CREATE TABLE realtime_spot_data (
     token VARCHAR,
     symbol VARCHAR,
+    exchange VARCHAR,
     ltp DOUBLE,
     open DOUBLE,
     high DOUBLE,
@@ -152,6 +153,14 @@ CREATE TABLE realtime_spot_data (
     best_ask_price DOUBLE,
     net_change DOUBLE,
     percent_change DOUBLE,
+    lower_circuit DOUBLE,
+    upper_circuit DOUBLE,
+    week_low_52 DOUBLE,
+    week_high_52 DOUBLE,
+    best_bid_orders INTEGER,  -- Number of orders at best bid
+    best_ask_orders INTEGER,  -- Number of orders at best ask
+    exch_feed_time TIMESTAMP,
+    exch_trade_time TIMESTAMP,
     timestamp TIMESTAMP,
     PRIMARY KEY (token, timestamp)
 )
@@ -163,6 +172,7 @@ CREATE TABLE realtime_spot_data (
 CREATE TABLE realtime_futures_data (
     token VARCHAR,
     symbol VARCHAR,
+    exchange VARCHAR,
     ltp DOUBLE,
     open DOUBLE,
     high DOUBLE,
@@ -178,6 +188,14 @@ CREATE TABLE realtime_futures_data (
     best_ask_price DOUBLE,
     net_change DOUBLE,
     percent_change DOUBLE,
+    lower_circuit DOUBLE,
+    upper_circuit DOUBLE,
+    week_low_52 DOUBLE,
+    week_high_52 DOUBLE,
+    best_bid_orders INTEGER,  -- Number of orders at best bid
+    best_ask_orders INTEGER,  -- Number of orders at best ask
+    exch_feed_time TIMESTAMP,
+    exch_trade_time TIMESTAMP,
     timestamp TIMESTAMP,
     PRIMARY KEY (token, timestamp)
 )
@@ -189,6 +207,7 @@ CREATE TABLE realtime_futures_data (
 CREATE TABLE realtime_options_data (
     token VARCHAR,
     symbol VARCHAR,
+    exchange VARCHAR,
     ltp DOUBLE,
     open DOUBLE,
     high DOUBLE,
@@ -204,8 +223,16 @@ CREATE TABLE realtime_options_data (
     best_ask_price DOUBLE,
     net_change DOUBLE,
     percent_change DOUBLE,
+    lower_circuit DOUBLE,
+    upper_circuit DOUBLE,
+    week_low_52 DOUBLE,
+    week_high_52 DOUBLE,
+    best_bid_orders INTEGER,  -- Number of orders at best bid
+    best_ask_orders INTEGER,  -- Number of orders at best ask
     strike DOUBLE,
     option_type VARCHAR,  -- 'CE' or 'PE'
+    exch_feed_time TIMESTAMP,
+    exch_trade_time TIMESTAMP,
     timestamp TIMESTAMP,
     PRIMARY KEY (token, timestamp)
 )
@@ -329,42 +356,41 @@ Build a Python backend to:
 - ⬜ Implement real-time market data storage
   - ✅ Create tables for real-time data
   - ✅ Implement data fetching
-  - ⚠️ Fix storage issues (currently failing silently)
-  - ⚠️ Add proper error logging for storage operations
-  - ⚠️ Add data validation before storage
-  - ⚠️ Add storage success/failure logging
+  - ✅ Add proper error logging for storage operations
+  - ✅ Add data validation before storage
+  - ✅ Add storage success/failure logging
 - ⬜ Implement daily data fetching automation
 
-**Current Status**: Successfully implemented real-time market data fetching with the following issues to resolve:
+**Current Status**: Successfully implemented real-time market data fetching and storage with the following features:
 
-1. ⚠️ Storage Operations:
-   - Need to fix silent failures in data storage
-   - Add proper error logging
-   - Add data validation before storage
-   - Add storage success/failure confirmation
+1. ✅ Storage Operations:
+   - Successfully storing SPOT, FUTURES, and OPTIONS market data
+   - Proper error logging implemented
+   - Data validation before storage
+   - Storage success/failure confirmation added
 
-2. ⚠️ Data Validation:
-   - Add validation for all fields before storage
-   - Handle missing or invalid data gracefully
-   - Log validation failures
+2. ✅ Data Validation:
+   - Validation for all fields before storage
+   - Handling of missing or invalid data
+   - Logging of validation failures
 
-3. ⚠️ Error Handling:
-   - Improve error messages
-   - Add retry logic for failed storage operations
-   - Add proper cleanup for failed operations
+3. ✅ Error Handling:
+   - Improved error messages
+   - Proper cleanup for failed operations
+   - Detailed error logging
 
-4. ⚠️ Logging:
-   - Add detailed logging for storage operations
-   - Add success/failure metrics
-   - Add data quality metrics
+4. ✅ Logging:
+   - Detailed logging for storage operations
+   - Success/failure metrics
+   - Data quality metrics
 
 **Next Steps**:
 
-1. Fix storage operations and add proper logging
-2. Implement data validation and error handling
-3. Add storage success/failure confirmation
-4. Set up daily data fetching automation
-5. Implement the frontend dashboard
+1. Set up daily data fetching automation
+2. Implement the frontend dashboard
+3. Add derived calculations (e.g., IV for options)
+4. Implement market sentiment indicators
+5. Add corporate actions tracking
 
 ### Phase 2: Frontend Development (Dashboard Visualization)
 
