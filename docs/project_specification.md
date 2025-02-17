@@ -16,11 +16,12 @@ FnO Trading Data Dashboard
 
 ### 3.1 Data Scope
 
-- Focus on stocks eligible for futures and options trading only
-- Daily data updates during market hours
+- Focus on specific stocks for initial implementation: RELIANCE, ITC, ZOMATO, MRF, IDEA
+- Real-time data updates at 1-minute intervals during market hours
 - Historical data for derived calculations
 - Spot data from 1992 onwards
 - Current day's data for futures and options
+- ATM options tracking (1 CE + 1 PE) for each stock
 
 ### 3.2 Data Points and Sources
 
@@ -53,6 +54,11 @@ FnO Trading Data Dashboard
 #### Options Data (Source: Options)
 
 1. ATM Option Price (Current Day)
+   - One ATM Call (CE) and one ATM Put (PE) per stock
+   - ATM strike selection based on:
+     - Current futures price
+     - Stock-specific strike intervals
+     - Closest available strike to futures price
    - OHLC Data
    - LTP and Volume
    - Open Interest
@@ -517,18 +523,18 @@ Develop a Next.js frontend with Shadcn/ui to:
    - [x] Check for edge cases
    - [x] Validate against known values
 
-#### 7.4.4. Options Data (To Be Implemented) ⬜
+#### 7.4.4. Options Data
 
 - ATM Options
-  - [ ] ATM Strike Price
-  - [ ] ATM Call Price
-  - [ ] ATM Put Price
-  - [ ] ATM Call IV
-  - [ ] ATM Put IV
-- Premium Analysis
-  - [ ] Future Premium (%)
-  - [ ] ATM Premium (%)
-  - [ ] ATM Price to Future Ratio
+  - [x] ATM Strike Price Calculation
+    - [x] Dynamic strike interval calculation per stock
+    - [x] Precise ATM strike selection based on futures price
+    - [x] Support for different strike intervals (1.0, 5.0, 10.0, 500.0 etc.)
+  - [x] ATM Call and Put Selection
+    - [x] One CE and one PE at ATM strike
+    - [x] Real-time updates based on futures price movement
+  - [ ] ATM Call/Put IV Calculation
+  - [ ] Premium Analysis
 - Market Sentiment
   - [ ] Put-Call Ratio (PCR)
   - [ ] OI Change
@@ -544,54 +550,52 @@ Develop a Next.js frontend with Shadcn/ui to:
   - [ ] Circuit Limits
   - [ ] Trading Restrictions
 
-### 7.4.6. Data Validation and Quality Checks ✅
+### 7.4.6. Data Collection Process
 
-#### Price Data Validation
+1. Token Management
+   - [x] Initial token download and categorization
+   - [x] Proper token type identification (SPOT/FUTURES/OPTIONS)
+   - [x] Token to name mapping for efficient joins
 
-- [x] Check for missing values
-- [x] Validate price ranges (no negative prices)
-- [x] Verify High ≥ Low
-- [x] Verify Open/Close within High-Low range
-- [x] Check for unusual price movements
+2. Real-time Data Collection
+   - [x] 1-minute interval data collection
+   - [x] Parallel data fetching for efficiency
+   - [x] Proper error handling and retry logic
+   - [x] Market hours validation
 
-#### Volume Data Validation
+3. Data Processing Flow
+   - [x] Load initial tokens for configured symbols
+   - [x] Parallel fetch of spot & futures prices
+   - [x] Process futures prices for ATM calculation
+   - [x] Calculate and update ATM strikes
+   - [x] Fetch and store ATM options data
+   - [x] Timestamp all stored data
 
-- [x] Check for negative volumes
-- [x] Validate against typical ranges
-- [x] Flag unusual volume spikes
+4. Error Handling
+   - [x] API call retry logic
+   - [x] Data validation before storage
+   - [x] Connection error recovery
+   - [x] Proper error logging
 
-#### Derived Data Validation
+5. Performance Optimization
+   - [x] Batch API calls for multiple symbols
+   - [x] Efficient database operations
+   - [x] Proper connection management
+   - [x] Resource cleanup
 
-- [x] Verify technical indicator calculations
-- [x] Validate percentage calculations
-- [x] Check for calculation artifacts
+### 7.4.7. Data Storage
 
-#### Data Freshness
+1. Real-time Tables
+   - [x] Spot data storage with timestamp
+   - [x] Futures data storage with timestamp
+   - [x] Options data storage with timestamp
+   - [x] Proper indexing for efficient queries
 
-- [x] Verify data timestamp currency
-- [x] Check update frequencies
-- [x] Monitor data gaps
-
-### 7.4.7. Data Enrichment Pipeline ✅
-
-#### Technical Analysis
-
-- [x] Implement MA calculations
-- [x] Calculate price levels
-- [x] Develop breakout detection
-- [x] Add volume analysis
-
-#### Options Analysis
-
-- [ ] Calculate IV
-- [ ] Determine ATM strikes
-- [ ] Compute premium percentages
-
-#### Market Analysis
-
-- [ ] Aggregate sentiment indicators
-- [ ] Process corporate actions
-- [ ] Track trading restrictions
+2. Data Validation
+   - [x] Price range validation
+   - [x] Strike price validation
+   - [x] Timestamp validation
+   - [x] Symbol mapping validation
 
 ### 7.5. FastAPI API Development ✅
 
