@@ -39,6 +39,7 @@ class AngelMarketData:
                 CREATE TABLE realtime_spot_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    name VARCHAR,
                     exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
@@ -72,6 +73,7 @@ class AngelMarketData:
                 CREATE TABLE realtime_futures_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    name VARCHAR,
                     exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
@@ -106,6 +108,7 @@ class AngelMarketData:
                 CREATE TABLE realtime_options_data (
                     token VARCHAR,
                     symbol VARCHAR,
+                    name VARCHAR,
                     exchange VARCHAR,
                     ltp DOUBLE,
                     open DOUBLE,
@@ -209,6 +212,13 @@ class AngelMarketData:
             con = duckdb.connect(self.db_file)
             timestamp = datetime.now(IST).replace(tzinfo=None)
             
+            # Get token to name mapping
+            token_names = dict(con.execute("""
+                SELECT token, name 
+                FROM tokens 
+                WHERE token_type = 'SPOT'
+            """).fetchall())
+            
             # Prepare data for insertion
             values = []
             for data in market_data:
@@ -226,6 +236,7 @@ class AngelMarketData:
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    token_names.get(data['symbolToken']),  # Get name from mapping
                     data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
@@ -255,13 +266,13 @@ class AngelMarketData:
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_spot_data (
-                    token, symbol, exchange, ltp, open, high, low, close, 
+                    token, symbol, name, exchange, ltp, open, high, low, close, 
                     last_trade_qty, avg_trade_price, volume,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
                     net_change, percent_change, lower_circuit, upper_circuit,
                     week_low_52, week_high_52, best_bid_orders, best_ask_orders,
                     exch_feed_time, exch_trade_time, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True
@@ -287,6 +298,13 @@ class AngelMarketData:
             con = duckdb.connect(self.db_file)
             timestamp = datetime.now(IST).replace(tzinfo=None)
             
+            # Get token to name mapping
+            token_names = dict(con.execute("""
+                SELECT token, name 
+                FROM tokens 
+                WHERE token_type = 'FUTURES'
+            """).fetchall())
+            
             # Prepare data for insertion
             values = []
             for data in market_data:
@@ -304,6 +322,7 @@ class AngelMarketData:
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    token_names.get(data['symbolToken']),  # Get name from mapping
                     data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
@@ -334,13 +353,13 @@ class AngelMarketData:
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_futures_data (
-                    token, symbol, exchange, ltp, open, high, low, close,
+                    token, symbol, name, exchange, ltp, open, high, low, close,
                     last_trade_qty, avg_trade_price, volume, oi,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
                     net_change, percent_change, lower_circuit, upper_circuit,
                     week_low_52, week_high_52, best_bid_orders, best_ask_orders,
                     exch_feed_time, exch_trade_time, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True
@@ -366,6 +385,13 @@ class AngelMarketData:
             con = duckdb.connect(self.db_file)
             timestamp = datetime.now(IST).replace(tzinfo=None)
             
+            # Get token to name mapping
+            token_names = dict(con.execute("""
+                SELECT token, name 
+                FROM tokens 
+                WHERE token_type = 'OPTIONS'
+            """).fetchall())
+            
             # Prepare data for insertion
             values = []
             for data in market_data:
@@ -386,6 +412,7 @@ class AngelMarketData:
                 values.append((
                     data['symbolToken'],
                     data['tradingSymbol'],
+                    token_names.get(data['symbolToken']),  # Get name from mapping
                     data['exchange'],
                     float(data['ltp']),
                     float(data['open']),
@@ -418,13 +445,13 @@ class AngelMarketData:
             # Insert data
             con.executemany("""
                 INSERT INTO realtime_options_data (
-                    token, symbol, exchange, ltp, open, high, low, close,
+                    token, symbol, name, exchange, ltp, open, high, low, close,
                     last_trade_qty, avg_trade_price, volume, oi,
                     total_buy_qty, total_sell_qty, best_bid_price, best_ask_price,
                     net_change, percent_change, lower_circuit, upper_circuit,
                     week_low_52, week_high_52, best_bid_orders, best_ask_orders,
                     strike, option_type, exch_feed_time, exch_trade_time, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, values)
             
             return True
@@ -515,4 +542,121 @@ class AngelMarketData:
             
         except Exception as e:
             logger.error(f"Error fetching and storing market data: {e}")
-            return False 
+            return False
+
+    def _get_strike_interval(self, name: str, expiry: str) -> float:
+        """Calculate the strike interval for a given stock
+        
+        Args:
+            name (str): Stock name
+            expiry (str): Expiry date
+            
+        Returns:
+            float: Most common strike interval
+        """
+        con = None
+        try:
+            con = duckdb.connect(self.db_file)
+            
+            # Get all strikes for this stock and expiry, ordered
+            logger.info(f"Calculating strike interval for {name} with expiry {expiry}")
+            
+            # First get all strikes and convert from paisa to rupees
+            strikes_result = con.execute("""
+                SELECT DISTINCT strike/100 as strike_price
+                FROM tokens
+                WHERE name = ?
+                AND expiry = ?
+                AND token_type = 'OPTIONS'
+                AND strike IS NOT NULL
+                ORDER BY strike_price
+            """, [name, expiry]).fetchall()
+            
+            if not strikes_result:
+                logger.error(f"No strikes found for {name} with expiry {expiry}")
+                return None
+                
+            strikes = [row[0] for row in strikes_result]
+            logger.info(f"Found {len(strikes)} unique strikes: {strikes[:10]} ...")
+            
+            # Calculate intervals between consecutive strikes
+            intervals = []
+            for i in range(1, len(strikes)):
+                interval = round(strikes[i] - strikes[i-1], 2)
+                intervals.append(interval)
+            
+            if not intervals:
+                logger.error("No intervals could be calculated")
+                return None
+                
+            logger.info(f"Calculated intervals between strikes: {intervals[:10]} ...")
+            
+            # Get the most frequent interval
+            result = con.execute("""
+                WITH strike_diffs AS (
+                    SELECT 
+                        ROUND(strike/100 - LAG(strike/100) OVER (ORDER BY strike), 2) as interval
+                    FROM (
+                        SELECT DISTINCT strike
+                        FROM tokens
+                        WHERE name = ?
+                        AND expiry = ?
+                        AND token_type = 'OPTIONS'
+                        AND strike IS NOT NULL
+                        ORDER BY strike
+                    )
+                )
+                SELECT interval, COUNT(*) as frequency
+                FROM strike_diffs
+                WHERE interval > 0
+                GROUP BY interval
+                ORDER BY frequency DESC, interval ASC
+                LIMIT 1
+            """, [name, expiry]).fetchone()
+            
+            if not result:
+                logger.error("Could not determine most common interval")
+                return None
+                
+            interval, frequency = result
+            logger.info(f"Most common interval: {interval} (occurs {frequency} times)")
+            
+            return interval
+            
+        except Exception as e:
+            logger.error(f"Error calculating strike interval for {name}: {e}")
+            return None
+        finally:
+            if con:
+                con.close()
+
+    def _get_atm_strikes(self, name: str, future_price: float, strike_interval: float, num_strikes: int = 0) -> List[float]:
+        """Get ATM strikes for a stock
+        
+        Args:
+            name (str): Stock name
+            future_price (float): Current futures price
+            strike_interval (float): Strike interval for this stock
+            num_strikes (int): Number of additional strikes to select above and below ATM (0 for ATM only)
+            
+        Returns:
+            List[float]: List of strike prices to include
+        """
+        try:
+            # Find ATM strike (closest strike to future price)
+            base_strike = round(future_price / strike_interval) * strike_interval
+            
+            if num_strikes == 0:
+                return [base_strike]
+                
+            # Generate strikes above and below if requested
+            strikes = []
+            for i in range(-num_strikes, num_strikes + 1):
+                strike = base_strike + (i * strike_interval)
+                strikes.append(strike)
+            
+            return strikes
+            
+        except Exception as e:
+            logger.error(f"Error calculating ATM strikes for {name}: {e}")
+            return [] 
