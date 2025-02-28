@@ -5,7 +5,7 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 from logzero import logger
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from data.token_manager import TokenManager
 
 # Constants
@@ -24,34 +24,33 @@ class HistoricalDataManager:
         self.last_api_call = 0  # Track last API call time for rate limiting
 
     def setup_database(self) -> None:
-        """Create the historical_data table if it doesn't exist"""
+        """Create database tables if they don't exist"""
         con = None
         try:
             con = duckdb.connect(self.db_file)
             
-            # Drop existing table to handle schema changes
-            con.execute("DROP TABLE IF EXISTS historical_data")
-            
+            # Use standard TIMESTAMP without precision specification
             con.execute("""
-                CREATE TABLE historical_data (
+                CREATE TABLE IF NOT EXISTS historical_data (
                     token VARCHAR,
                     symbol VARCHAR,
                     name VARCHAR,
-                    timestamp TIMESTAMP,
+                    timestamp TIMESTAMP,  -- Changed from TIMESTAMP_NS
                     open DOUBLE,
                     high DOUBLE,
                     low DOUBLE,
                     close DOUBLE,
                     volume BIGINT,
                     oi BIGINT,
-                    token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
-                    download_timestamp TIMESTAMP,
+                    token_type VARCHAR,
+                    download_timestamp TIMESTAMP,  -- Changed from TIMESTAMP_NS
                     PRIMARY KEY (token, timestamp)
                 )
             """)
             logger.info("Historical data table created/verified successfully")
+            
         except Exception as e:
-            logger.error(f"Error setting up historical data table: {e}")
+            logger.error(f"Error setting up database: {e}")
             raise
         finally:
             if con:
@@ -136,87 +135,91 @@ class HistoricalDataManager:
 
     def _store_historical_data(self, historical_data: Dict[str, Any], token_info: Dict[str, Any]) -> bool:
         """Store historical data in the database"""
-        if not historical_data or 'data' not in historical_data:
-            logger.warning("No historical data received for storage")
-            return False
-            
         con = None
         try:
-            current_time = datetime.now(IST).replace(tzinfo=None)
-            records = []
+            logger.debug(f"Storing historical data for {token_info['symbol']}")
+            logger.debug(f"Token info: {token_info}")
             
-            for idx, candle in enumerate(historical_data['data']):
+            if not historical_data or 'data' not in historical_data:
+                logger.warning("No historical data received for storage")
+                return False
+            
+            # Define column names
+            columns = ['token', 'symbol', 'name', 'timestamp', 'open', 'high', 'low', 
+                       'close', 'volume', 'oi', 'token_type', 'download_timestamp']
+            
+            # Store records as strings or primitive types to avoid timestamp conversion issues
+            string_records = []
+            for candle in historical_data['data']:
                 try:
-                    # Parse timestamp without debug logs
+                    # Parse timestamp 
                     ts = pd.to_datetime(candle[0])
                     if ts.tz is None:
                         ts = ts.tz_localize('UTC')
-                    timestamp = ts.tz_convert(IST).replace(tzinfo=None)
+                    timestamp = ts.tz_convert(IST).tz_localize(None)
                     
-                    # Convert numeric values with proper error handling
-                    try:
-                        open_price = float(candle[1])
-                        high_price = float(candle[2])
-                        low_price = float(candle[3])
-                        close_price = float(candle[4])
-                        volume = int(candle[5])
-                    except (ValueError, TypeError) as e:
-                        logger.warning(f"Invalid numeric data in candle: {candle}")
-                        continue
+                    # Format as string in ISO format
+                    timestamp_str = timestamp.strftime("%Y-%m-%d %H:%M:%S")
                     
-                    # Validate price data
-                    if any(p <= 0 for p in [open_price, high_price, low_price, close_price]):
-                        logger.warning(f"Invalid price data (<=0) in candle: {candle}")
-                        continue
+                    # Convert numeric values
+                    open_price = float(candle[1])
+                    high_price = float(candle[2])
+                    low_price = float(candle[3])
+                    close_price = float(candle[4])
+                    volume = int(candle[5])
                     
-                    if not (low_price <= open_price <= high_price and 
-                           low_price <= close_price <= high_price):
-                        logger.warning(f"Invalid price range in candle: {candle}")
-                        continue
-                    
-                    if volume < 0:
-                        logger.warning(f"Invalid volume (<0) in candle: {candle}")
-                        continue
-                    
-                    records.append({
-                        'token': token_info['token'],
-                        'symbol': token_info['symbol'],
-                        'name': token_info['name'],
-                        'timestamp': timestamp,
-                        'open': open_price,
-                        'high': high_price,
-                        'low': low_price,
-                        'close': close_price,
-                        'volume': volume,
-                        'oi': 0,  # oi (not available in candle data)
-                        'token_type': token_info['token_type'],
-                        'download_timestamp': current_time
-                    })
-                except (ValueError, IndexError) as e:
-                    logger.error(f"Invalid candle data at index {idx}: {candle} | Error: {str(e)}")
+                    # Add to string records
+                    string_records.append((
+                        token_info['token'],
+                        token_info['symbol'],
+                        token_info['name'],
+                        timestamp_str,  # Use string format
+                        open_price, 
+                        high_price,
+                        low_price,
+                        close_price,
+                        volume,
+                        0,  # oi
+                        token_info['token_type'],
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Current time as string
+                    ))
+                except Exception as e:
+                    logger.error(f"Error processing candle data: {e}")
                     continue
             
-            if records:
-                # Convert with explicit datetime resolution
-                df = pd.DataFrame(records)
-                df['timestamp'] = pd.to_datetime(df['timestamp'], utc=False).astype('datetime64[us]')
-                df['download_timestamp'] = pd.to_datetime(df['download_timestamp'], utc=False).astype('datetime64[us]')
+            if string_records:
+                # Create DataFrame with explicit column names
+                df = pd.DataFrame(string_records, columns=columns)
                 
-                # Store data in database
+                # Convert to pandas datetime64 type
+                df['timestamp'] = pd.to_datetime(df['timestamp'], utc=False)
+                df['download_timestamp'] = pd.to_datetime(df['download_timestamp'], utc=False)
+                
+                # Connect to database
                 con = duckdb.connect(self.db_file)
-                con.execute("SET timezone = 'Asia/Kolkata'")
                 
-                # Delete existing records for this token and timestamp
-                con.execute("""
-                    DELETE FROM historical_data 
-                    WHERE token = ? 
-                    AND timestamp IN (SELECT timestamp FROM df)
-                """, [token_info['token']])
+                # Get date for deletion
+                date_str = pd.to_datetime(df['timestamp'].iloc[0]).strftime("%Y-%m-%d")
                 
-                # Insert new records from DataFrame
+                # Delete existing records
+                con.execute(
+                    "DELETE FROM historical_data WHERE token = ? AND CAST(timestamp AS DATE) = ?",
+                    [token_info['token'], date_str]
+                )
+                
+                # Insert records directly from DataFrame
                 con.execute("INSERT INTO historical_data SELECT * FROM df")
                 
-                logger.info(f"Successfully stored {len(records)} records for {token_info['symbol']}")
+                # After storing the data, verify what we've stored
+                stored_count = con.execute("""
+                    SELECT COUNT(*), MIN(timestamp)::DATE, MAX(timestamp)::DATE 
+                    FROM historical_data 
+                    WHERE token = ?
+                """, [token_info['token']]).fetchone()
+                
+                logger.info(f"Stored {len(string_records)} records for {token_info['symbol']}. " 
+                           f"DB now has {stored_count[0]} records from {stored_count[1]} to {stored_count[2]}")
+                
                 return True
             else:
                 logger.warning(f"No valid records found for {token_info['symbol']}")
@@ -224,57 +227,39 @@ class HistoricalDataManager:
                 
         except Exception as e:
             logger.error(f"Storage failed for {token_info['symbol']}: {str(e)}")
+            logger.exception("Full traceback:")
             return False
         finally:
             if con:
                 con.close()
 
-    def download_spot_data(self, connector) -> bool:
-        """Download historical spot data from 1992"""
+    def download_spot_data(self, connector, token_info: Dict[str, Any]) -> bool:
+        """Download historical spot data for a token"""
         try:
-            spot_tokens = self.get_tokens_by_type("SPOT")
-            if not spot_tokens:
-                logger.error("No spot tokens found")
-                return False
-
-            success_count = 0
-            error_count = 0
+            token, symbol, name, exchange = token_info
             
-            for token_info in spot_tokens:
-                try:
-                    logger.info(f"Fetching spot data for {token_info['symbol']}")
-                    
-                    # Format dates properly
-                    from_date = datetime.strptime(SPOT_START_DATE, "%Y-%m-%d")
-                    to_date = datetime.now(IST)
-                    
-                    params = {
-                        "exchange": "NSE",
-                        "symboltoken": token_info['token'],
-                        "interval": "ONE_DAY",
-                        "fromdate": from_date.strftime("%Y-%m-%d 09:00"),
-                        "todate": to_date.strftime("%Y-%m-%d %H:%M")
-                    }
-                    
-                    historical_data = self._get_candle_data_with_retry(connector, params)
-                    if historical_data and self._store_historical_data(historical_data, token_info):
-                        success_count += 1
-                    else:
-                        error_count += 1
-                        
-                except Exception as e:
-                    error_count += 1
-                    logger.error(f"Error processing spot data for {token_info['symbol']}: {str(e)}")
-                    continue
-
-            logger.info(f"\nSpot data processing summary:")
-            logger.info(f"- Successfully processed: {success_count}")
-            logger.info(f"- Failed to process: {error_count}")
+            # Get current date in IST
+            current_date = datetime.now(IST)
             
-            return success_count > 0
+            # Get previous trading day
+            prev_day = self._get_previous_trading_day(current_date.date())
+            
+            params = {
+                "exchange": exchange,
+                "symboltoken": token,
+                "interval": "ONE_DAY",
+                "fromdate": prev_day.strftime("%Y-%m-%d 09:00"),
+                "todate": prev_day.strftime("%Y-%m-%d 15:30")
+            }
+            
+            historical_data = self._get_candle_data_with_retry(connector, params)
+            if historical_data and self._store_historical_data(historical_data, token_info):
+                return True
+            
+            return False
             
         except Exception as e:
-            logger.error(f"Error in spot data processing: {e}")
+            logger.error(f"Error downloading spot data for {token_info[1]}: {e}")
             return False
 
     def download_futures_data(self, connector) -> bool:
@@ -371,18 +356,17 @@ class HistoricalDataManager:
             logger.error(f"Error in options data processing: {e}")
             return False
 
-    def fetch_and_store_historical_data(self, api_connector) -> bool:
-        """Fetch and store historical data for all tokens"""
-        # Check if token data is current
-        if not self.token_manager.is_market_data_current():
-            logger.info("Token data not current, refreshing tokens first...")
-            if not self.token_manager.download_and_store_tokens():
-                logger.error("Failed to refresh token data")
-                return False
-
-        # Get all spot tokens
-        con = None
+    def fetch_and_store_historical_data(self, connector) -> bool:
+        """Main function to fetch and store historical data for all tokens"""
         try:
+            # Check if token data is current
+            if not self.token_manager.is_market_data_current():
+                logger.info("Token data not current, refreshing tokens first...")
+                if not self.token_manager.download_and_store_tokens():
+                    logger.error("Failed to refresh token data")
+                    return False
+
+            # Get all spot tokens
             con = duckdb.connect(self.db_file)
             spot_tokens = con.execute("""
                 SELECT token, symbol, name, exch_seg 
@@ -391,27 +375,104 @@ class HistoricalDataManager:
             """).fetchall()
             
             logger.info(f"Found {len(spot_tokens)} SPOT tokens")
+            logger.debug(f"First few tokens: {spot_tokens[:3]}")
             
-            # First check if we have historical data already
-            for token, symbol, name, exchange in spot_tokens:
-                # Check if we already have current data for this token
-                has_current_data = self._is_historical_data_current(con, token)
+            success_count = 0
+            error_count = 0
+            
+            # Process each token
+            for token_info in spot_tokens:
+                token, symbol = token_info[0], token_info[1]
+                logger.debug(f"Processing token_info: {token_info}")
                 
-                if has_current_data:
+                # Skip if data is current
+                if self._is_historical_data_current(con, token):
                     logger.info(f"Historical data for {symbol} is current, skipping...")
                     continue
                     
-                logger.info(f"Fetching spot data for {symbol}")
-                # Rest of the code for fetching and storing data...
-                
-            # Return True if all operations were successful
-            return True
+                logger.info(f"Fetching historical data for {symbol}")
+                if self._download_token_data(connector, token_info):
+                    success_count += 1
+                else:
+                    error_count += 1
+                    
+            logger.info(f"\nHistorical Data Download Summary:")
+            logger.info(f"- Successfully processed: {success_count}")
+            logger.info(f"- Failed to process: {error_count}")
+            
+            return success_count > 0 or error_count == 0
+            
         except Exception as e:
-            logger.error(f"Error fetching historical data: {e}")
+            logger.error(f"Error in historical data collection: {e}")
+            logger.exception("Detailed traceback:")
             return False
         finally:
             if con:
                 con.close()
+
+    def _download_token_data(self, connector, token_info: Tuple) -> bool:
+        """Download historical data for a single token"""
+        try:
+            # Add detailed logging of token_info
+            logger.debug(f"Token info received: {token_info}")
+            logger.debug(f"Token info type: {type(token_info)}")
+            
+            # Unpack tuple correctly
+            token, symbol, name, exchange = token_info
+            
+            logger.info(f"Processing token data: token={token}, symbol={symbol}, name={name}, exchange={exchange}")
+            
+            # Get previous trading day
+            today = datetime.now(IST).date()
+            if today.year > datetime.now().year:
+                today = datetime.now().date()  # Correct the year if it's in the future
+            
+            prev_day = self._get_previous_trading_day(today)
+            logger.debug(f"Previous trading day: {prev_day}")
+            
+            # For technical indicators, we need at least 30-60 days of data
+            # Calculate start date (60 trading days ~ 84 calendar days to account for weekends/holidays)
+            start_day = prev_day - timedelta(days=84)
+            
+            # Skip weekends for start day
+            while start_day.weekday() >= 5:
+                start_day = start_day - timedelta(days=1)
+            
+            params = {
+                "exchange": exchange,
+                "symboltoken": token,
+                "interval": "ONE_DAY",
+                "fromdate": start_day.strftime("%Y-%m-%d 09:00"),
+                "todate": prev_day.strftime("%Y-%m-%d 15:30")
+            }
+            logger.debug(f"API parameters: {params}")
+            
+            historical_data = self._get_candle_data_with_retry(connector, params)
+            if not historical_data:
+                logger.error(f"Failed to get historical data for {symbol}")
+                return False
+            
+            # Convert token_info tuple to dict for _store_historical_data
+            token_info_dict = {
+                'token': token,
+                'symbol': symbol,
+                'name': name,
+                'exchange': exchange,
+                'token_type': 'SPOT'  # Add token_type for SPOT data
+            }
+            
+            # Validate data before storing
+            if 'data' in historical_data and len(historical_data['data']) > 0:
+                logger.debug(f"Retrieved {len(historical_data['data'])} candles for {symbol}")
+                return self._store_historical_data(historical_data, token_info_dict)
+            else:
+                logger.warning(f"No historical data records found for {symbol}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error downloading data for {token_info[1]}: {str(e)}")
+            logger.exception("Detailed traceback:")
+            return False
 
     def _is_historical_data_current(self, con, token: str) -> bool:
         """Check if we already have current historical data for this token"""
@@ -424,13 +485,16 @@ class HistoricalDataManager:
             if now.time() < datetime.strptime("15:30:00", "%H:%M:%S").time():
                 current_date = self._get_previous_trading_day(current_date)
             
-            # Check if we have data for the latest trading day
+            # Format date as string for correct comparison
+            date_str = current_date.strftime("%Y-%m-%d")
+            
+            # Check if we have data for the latest trading day using correct DuckDB syntax
             result = con.execute("""
                 SELECT COUNT(*) 
                 FROM historical_data 
                 WHERE token = ? 
-                AND timestamp::DATE = ?
-            """, [token, current_date]).fetchone()[0]
+                AND CAST(timestamp AS DATE) = ?
+            """, [token, date_str]).fetchone()[0]
             
             return result > 0
         except Exception as e:
@@ -439,6 +503,15 @@ class HistoricalDataManager:
 
     def _get_previous_trading_day(self, date):
         """Get the previous trading day, skipping weekends"""
+        # Ensure we're working with valid dates
+        current_year = datetime.now().year
+        if date.year > current_year:
+            logger.warning(f"Future date detected ({date}), using current date instead")
+            return self._get_previous_trading_day(datetime.now().date())
+        if date.year < 1992:
+            logger.warning(f"Invalid historical date ({date}), using 1992-01-01 instead")
+            return datetime(1992, 1, 1).date()
+        
         prev_day = date - timedelta(days=1)
         # Skip weekends (5=Saturday, 6=Sunday)
         while prev_day.weekday() >= 5:

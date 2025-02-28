@@ -9,3 +9,49 @@ getMarketData can handle 50 tokens at a time. one stock will have 1 spot, 1 futu
 so plan to combine multiple stocks data into single request. store all the data in duckdb new tables. 
 
 create test script which refreshes token(use existing script) and then download the data.
+
+
+LTP SPOT-> Angel -> 15 seconds
+LTP FUTURES -> Angel -> 15 seconds
+LTP OPTIONS -> Angel -> 15 seconds
+Greeks -> Calculated from LTP options -> 15 seconds
+IV options -> Calculated from LTP options -> 15 seconds
+52w high -> derived from LTP spot -> 15 seconds
+52w low -> derived from LTP spot -> 15 seconds
+200dma -> Historical data Till previous day -> 1 day
+Breakout -> Historical data Till previous day -> 1 day
+OI -> LTP options -> 15 seconds
+OHLCV Spot -> Angel -> 15 seconds
+OHLCV Futures -> Angel -> 15 seconds
+OHLCV Options -> Angel -> 15 seconds
+
+I want you to start on following task, create/update check list in project specification doc. go one
+step at a time. e.g. 1, 4a, 3a in one go please.
+1) scheduler will start this code around 9 am and end at 3:45 pm.
+2) This code should start refreshing token data. (already implemented).
+3) Download yesterday's data for all stocks and store in duckdb. (already implemented, but need to test refresh logic if same day rerun.)
+        a) create new table with summarize data for each stock. calculate technical indicators for each stock. that new table should have 
+           only one row per stock.
+4) once market starts(9:15 am), start downloading LTP data for all stocks(every 5 seconds by default, configurable), options and futures.(function alredy implemented)
+        a) getMarketData API supports 50 tokens at a time. so need to combine all stocks, options and futures data into single request.
+        b) merge multiple stocks data into single request, if required.
+        c) for single day, token value for spot and futures will be same. so need to handle this.
+        d) As we are only storing ATM option data, we may need to calculate ATM strikes and corresponding token in every itreation.
+           do nothing if token matches with last requrest, update the list in case new token is found.
+        e) calculate greeks, IV etc. and store in duckdb.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

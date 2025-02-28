@@ -800,3 +800,122 @@ Develop a Next.js frontend with Shadcn/ui to:
 
 - **Risk**: Data accuracy issues
 - **Mitigation**: Validation, logging, testing
+
+## Current Status
+
+### Recent Fixes
+
+- Fixed timestamp precision issues by using standard `TIMESTAMP` types
+- Implemented proper date handling with explicit casting
+- Added data verification and improved logging
+- Increased historical data lookback period to 84 days for technical indicators
+
+### Current Issues
+
+1. **Primary Key Constraint Violations**
+   - Getting duplicate key errors when storing historical data
+   - Example error:
+
+  ```log
+  Constraint Error: Duplicate key "token: 14309, timestamp: 2025-02-27 00:00:00" 
+  violates primary key constraint
+  ```
+
+- Root cause: DELETE operation not properly clearing existing records before INSERT
+- Affects daily records with the same date
+
+2. **System Clock Issues**
+   - System clock appears to be set to 2025
+   - Causing inconsistencies in date handling
+   - Need more robust date validation
+
+## Implementation Plan
+
+### 1. Fix Historical Data Storage
+
+Current schema:
+
+  ```sql
+  CREATE TABLE historical_data (
+      token VARCHAR,
+      symbol VARCHAR,
+      name VARCHAR,
+      timestamp TIMESTAMP,
+      open DOUBLE,
+      high DOUBLE,
+      low DOUBLE,
+      close DOUBLE,
+      volume BIGINT,
+      oi BIGINT,
+      token_type VARCHAR,
+      download_timestamp TIMESTAMP,
+      PRIMARY KEY (token, timestamp)
+  )
+  ```
+
+Required changes:
+
+- Implement UPSERT instead of DELETE + INSERT
+- Add proper date validation
+- Improve error handling for duplicate records
+
+### 2. Technical Indicators Calculation
+
+Current issues:
+
+- Insufficient historical data for some tokens
+- NULL values in temporary tables
+- Date conversion inconsistencies
+
+Required changes:
+
+- Add data sufficiency validation
+- Improve temporary table handling
+- Fix date casting in SQL queries
+
+### 3. Date Handling Improvements
+
+Required changes:
+
+- Add consistent date validation across all modules
+- Implement reference date system
+- Add timezone handling for all date operations
+
+## Dependencies
+
+- DuckDB for data storage
+- Pandas and pandas-ta for technical analysis
+- FastAPI for API endpoints
+- Python 3.9+
+
+## Testing Requirements
+
+- Add unit tests for date handling
+- Add integration tests for data storage
+- Add validation tests for technical indicators
+
+## Next Steps
+
+1. Update historical data storage:
+
+  ```python
+  def _store_historical_data(self, historical_data: Dict[str, Any], token_info: Dict[str, Any]) -> bool:
+      """Store historical data using UPSERT pattern"""
+      # Implementation here
+  ```
+
+2. Improve technical indicators calculation:
+
+  ```python
+  def calculate_indicators(self, token: str) -> bool:
+      """Calculate technical indicators with improved validation"""
+      # Implementation here
+  ```
+
+3. Add robust date handling:
+
+  ```python
+  def validate_and_normalize_date(self, date: datetime) -> datetime:
+      """Ensure dates are valid and normalized"""
+      # Implementation here
+  ```

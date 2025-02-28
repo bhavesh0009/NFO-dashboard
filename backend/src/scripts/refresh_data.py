@@ -74,13 +74,18 @@ def refresh_market_data():
         
         # Fetch and store all data
         logger.info("Fetching and storing market data...")
-        if not historical_manager.fetch_and_store_all_data(smart_api):
+        if not historical_manager.fetch_and_store_historical_data(smart_api):
             raise Exception("Failed to fetch and store market data")
             
         # Calculate technical indicators
         logger.info("Calculating technical indicators...")
         if not indicator_manager.calculate_all_indicators():
             raise Exception("Failed to calculate technical indicators")
+            
+        # Update daily summary
+        logger.info("Updating daily summary...")
+        if not indicator_manager.update_daily_summary():
+            raise Exception("Failed to update daily summary")
             
         # Update latest market data
         logger.info("Updating latest market data...")
