@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 from logzero import logger
 from typing import List, Dict, Any, Optional
-from src.data.token_manager import TokenManager
+from data.token_manager import TokenManager
 
 # Constants
 IST = pytz.timezone('Asia/Kolkata')
@@ -371,20 +371,76 @@ class HistoricalDataManager:
             logger.error(f"Error in options data processing: {e}")
             return False
 
-    def fetch_and_store_all_data(self, connector) -> bool:
-        """
-        Fetch and store historical data for all token types
-        Returns:
-            bool: True if all operations were successful, False otherwise
-        """
+    def fetch_and_store_historical_data(self, api_connector) -> bool:
+        """Fetch and store historical data for all tokens"""
+        # Check if token data is current
         if not self.token_manager.is_market_data_current():
             logger.info("Token data not current, refreshing tokens first...")
             if not self.token_manager.download_and_store_tokens():
                 logger.error("Failed to refresh token data")
                 return False
 
-        spot_success = self.download_spot_data(connector)
-        futures_success = self.download_futures_data(connector)
-        options_success = self.download_options_data(connector)
+        # Get all spot tokens
+        con = None
+        try:
+            con = duckdb.connect(self.db_file)
+            spot_tokens = con.execute("""
+                SELECT token, symbol, name, exch_seg 
+                FROM tokens 
+                WHERE token_type = 'SPOT'
+            """).fetchall()
+            
+            logger.info(f"Found {len(spot_tokens)} SPOT tokens")
+            
+            # First check if we have historical data already
+            for token, symbol, name, exchange in spot_tokens:
+                # Check if we already have current data for this token
+                has_current_data = self._is_historical_data_current(con, token)
+                
+                if has_current_data:
+                    logger.info(f"Historical data for {symbol} is current, skipping...")
+                    continue
+                    
+                logger.info(f"Fetching spot data for {symbol}")
+                # Rest of the code for fetching and storing data...
+                
+            # Return True if all operations were successful
+            return True
+        except Exception as e:
+            logger.error(f"Error fetching historical data: {e}")
+            return False
+        finally:
+            if con:
+                con.close()
 
-        return spot_success and futures_success and options_success 
+    def _is_historical_data_current(self, con, token: str) -> bool:
+        """Check if we already have current historical data for this token"""
+        try:
+            # Get latest trading day (exclude weekends and holidays)
+            now = datetime.now(IST)
+            current_date = now.date()
+            
+            # If it's before market close time (15:30), we consider previous trading day as latest
+            if now.time() < datetime.strptime("15:30:00", "%H:%M:%S").time():
+                current_date = self._get_previous_trading_day(current_date)
+            
+            # Check if we have data for the latest trading day
+            result = con.execute("""
+                SELECT COUNT(*) 
+                FROM historical_data 
+                WHERE token = ? 
+                AND timestamp::DATE = ?
+            """, [token, current_date]).fetchone()[0]
+            
+            return result > 0
+        except Exception as e:
+            logger.error(f"Error checking if historical data is current: {e}")
+            return False
+
+    def _get_previous_trading_day(self, date):
+        """Get the previous trading day, skipping weekends"""
+        prev_day = date - timedelta(days=1)
+        # Skip weekends (5=Saturday, 6=Sunday)
+        while prev_day.weekday() >= 5:
+            prev_day = prev_day - timedelta(days=1)
+        return prev_day

@@ -25,27 +25,30 @@ class TokenManager:
             # Create new connection and table
             con = duckdb.connect(self.db_file)
             
-            # Drop existing table to handle schema changes
-            con.execute("DROP TABLE IF EXISTS tokens")
+            # Check if table exists instead of dropping it
+            table_exists = con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'tokens'").fetchone()[0] > 0
             
-            # Create table with new schema
-            con.execute("""
-                CREATE TABLE tokens (
-                    token VARCHAR,
-                    symbol VARCHAR,
-                    formatted_symbol VARCHAR,
-                    name VARCHAR,
-                    expiry VARCHAR,
-                    strike DOUBLE,
-                    lotsize VARCHAR,
-                    instrumenttype VARCHAR,
-                    exch_seg VARCHAR,
-                    tick_size DOUBLE,
-                    token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
-                    download_timestamp TIMESTAMP
-                )
-            """)
-            logger.info("Database setup completed successfully")
+            # Only create if it doesn't exist
+            if not table_exists:
+                con.execute("""
+                    CREATE TABLE tokens (
+                        token VARCHAR,
+                        symbol VARCHAR,
+                        formatted_symbol VARCHAR,
+                        name VARCHAR,
+                        expiry VARCHAR,
+                        strike DOUBLE,
+                        lotsize VARCHAR,
+                        instrumenttype VARCHAR,
+                        exch_seg VARCHAR,
+                        tick_size DOUBLE,
+                        token_type VARCHAR,  -- 'SPOT', 'FUTURES', or 'OPTIONS'
+                        download_timestamp TIMESTAMP
+                    )
+                """)
+                logger.info("Tokens table created successfully")
+            else:
+                logger.info("Tokens table already exists")
         except Exception as e:
             logger.error(f"Error setting up database: {e}")
             raise
@@ -58,9 +61,11 @@ class TokenManager:
         try:
             con = duckdb.connect(self.db_file)
             
+            logger.info(f"Checking if market data is current in database: {self.db_file}")
+            
             result = con.execute("""
                 SELECT MAX(download_timestamp) as last_download,
-                       COUNT(*) as total_records 
+                    COUNT(*) as total_records 
                 FROM tokens
             """).fetchone()
             
@@ -78,11 +83,22 @@ class TokenManager:
                 "%Y-%m-%d %H:%M:%S"
             )
             
-            return (last_download.date() == current_date and 
-                    last_download >= market_open_time)
+            logger.info(f"Current date: {current_date}")
+            logger.info(f"Market open time: {market_open_time}")
+            logger.info(f"Last download date: {last_download.date()}")
+            logger.info(f"Is last download same as current date? {last_download.date() == current_date}")
+            logger.info(f"Is last download after market open? {last_download >= market_open_time}")
+            
+            is_current = (last_download.date() == current_date and last_download >= market_open_time)
+            logger.info(f"Is market data current? {is_current}")
+            
+            return is_current
             
         except Exception as e:
-            logger.error(f"Error checking market data currency: {e}")
+            logger.error(f"Error checking if market data is current: {e}")
+            # Print stack trace for debugging
+            import traceback
+            logger.error(traceback.format_exc())
             return False
         finally:
             if con:
